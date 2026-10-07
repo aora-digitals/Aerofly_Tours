@@ -1,0 +1,19 @@
+import { Filter, Search, SlidersHorizontal } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Link } from "wouter";
+import Header from "@/components/site/Header";
+import Footer from "@/components/site/Footer";
+import TourCard from "@/components/site/TourCard";
+import { trpc } from "@/lib/trpc";
+
+export default function Tours() {
+  const initial = useMemo(() => new URLSearchParams(window.location.search), []);
+  const [search, setSearch] = useState(initial.get("search") ?? "");
+  const [kind, setKind] = useState<"all" | "domestic" | "international">((initial.get("kind") as "domestic" | "international") ?? "all");
+  const [category, setCategory] = useState("");
+  const input = useMemo(() => ({ search: search || undefined, kind: kind === "all" ? undefined : kind, category: category || undefined }), [search, kind, category]);
+  const { data: tours, isLoading } = trpc.content.tours.useQuery(input);
+  const { data: categories } = trpc.content.categories.useQuery();
+  return <div className="min-h-screen"><Header /><main><section className="border-b border-[#e8e4dd] bg-[#f3ede5] py-16"><div className="container"><div className="eyebrow">The AeroFly collection</div><h1 className="display mt-4 max-w-[680px] text-5xl font-extrabold sm:text-7xl">Find the route<br /><span className="text-[#f26b35]">that fits.</span></h1><p className="mt-5 max-w-[560px] text-[15px] leading-7 text-[#6f6c66]">Browse thoughtfully paced domestic and international journeys. Every package is a starting point—not a box you have to fit inside.</p><div className="mt-8 flex max-w-[720px] flex-col gap-3 rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(29,25,20,.08)] sm:flex-row"><div className="relative flex-1"><Search size={17} className="absolute left-4 top-3.5 text-[#908b83]" /><input value={search} onChange={(e) => setSearch(e.target.value)} className="field border-0 bg-[#fbfaf8] pl-11" placeholder="Search Dubai, Kerala, family…" /></div><select className="field sm:max-w-[185px]" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}><option value="all">All destinations</option><option value="domestic">Domestic</option><option value="international">International</option></select><button className="btn btn-dark"><Search size={15} /> Find journeys</button></div></div></section><section className="section"><div className="container"><div className="flex flex-col justify-between gap-4 border-b border-[#e8e4dd] pb-5 sm:flex-row sm:items-center"><div><span className="text-[13px] font-semibold text-[#6f6c66]">{isLoading ? "Finding journeys…" : `${tours?.length ?? 0} journeys to explore`}</span></div><div className="flex items-center gap-2"><SlidersHorizontal size={15} className="text-[#908b83]" /><select className="border-0 bg-transparent text-[13px] font-semibold outline-none" value={category} onChange={(e) => setCategory(e.target.value)}><option value="">All travel styles</option>{categories?.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select></div></div>{isLoading ? <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3"><Skeleton /><Skeleton /><Skeleton /></div> : tours && tours.length > 0 ? <div className="mt-8 grid gap-5 md:grid-cols-2 lg:grid-cols-3">{tours.map((tour) => <TourCard key={tour.slug} tour={tour} />)}</div> : <div className="card mt-8 grid place-items-center p-16 text-center"><Filter size={28} className="text-[#f26b35]" /><h2 className="mt-5 font-['Manrope'] text-2xl font-extrabold">Nothing quite matched that search.</h2><p className="mt-2 max-w-[360px] text-[13px] leading-6 text-[#6f6c66]">Try a broader destination or tell us what you have in mind and we’ll shape a route around it.</p><Link href="/plan-my-trip" className="btn btn-primary mt-6">Plan a custom trip</Link></div>}</div></section></main><Footer /></div>;
+}
+function Skeleton() { return <div className="h-[420px] animate-pulse rounded-2xl bg-[#eee9e1]" />; }

@@ -1,0 +1,78 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Manrope:wght@500;600;700;800&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+:root {
+  --background: #fbfaf8;
+  --foreground: #181817;
+  --muted: #6f6c66;
+  --line: #e8e4dd;
+  --card: #ffffff;
+  --ink: #151515;
+  --charcoal: #20201e;
+  --orange: #f26b35;
+  --orange-dark: #c94d1c;
+  --orange-soft: #fff0e8;
+  --sand: #f3ede5;
+  --shadow: 0 18px 44px rgba(29, 25, 20, 0.08);
+  --radius: 14px;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; min-width: 320px; background: var(--background); color: var(--foreground); font-family: 'DM Sans', system-ui, sans-serif; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+::selection { background: #ffc9ae; color: var(--ink); }
+
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; }
+}
+
+@keyframes rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes drift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }
+.reveal { animation: rise .65s cubic-bezier(.23,1,.32,1) both; }
+.reveal-delay-1 { animation-delay: .08s; }
+.reveal-delay-2 { animation-delay: .16s; }
+.reveal-delay-3 { animation-delay: .24s; }
+.drift { animation: drift 6s ease-in-out infinite; }
+
+.container { width: 100%; margin: 0 auto; padding-left: 24px; padding-right: 24px; max-width: 1240px; }
+.section { padding-top: 88px; padding-bottom: 88px; }
+.eyebrow { color: var(--orange-dark); font-size: 11px; font-weight: 800; letter-spacing: .18em; text-transform: uppercase; }
+.display { font-family: 'Manrope', sans-serif; letter-spacing: -.055em; line-height: .98; }
+.text-balance { text-wrap: balance; }
+.soft-grid { background-image: linear-gradient(to right, rgba(25,25,23,.035) 1px, transparent 1px), linear-gradient(to bottom, rgba(25,25,23,.035) 1px, transparent 1px); background-size: 48px 48px; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 46px; border: 1px solid transparent; border-radius: 999px; padding: 0 18px; font-size: 13px; font-weight: 700; transition: transform .16s ease, background .2s ease, border-color .2s ease, color .2s ease; }
+.btn:active { transform: scale(.97); }
+.btn-primary { background: var(--orange); color: #fff; box-shadow: 0 10px 22px rgba(242,107,53,.2); }
+.btn-primary:hover { background: var(--orange-dark); transform: translateY(-1px); }
+.btn-dark { background: var(--ink); color: #fff; }
+.btn-dark:hover { background: #363632; transform: translateY(-1px); }
+.btn-ghost { color: var(--ink); border-color: var(--line); background: rgba(255,255,255,.65); }
+.btn-ghost:hover { border-color: #c8c1b8; background: #fff; }
+.btn-light { color: var(--ink); background: #fff; }
+.btn-light:hover { background: #fff4ec; }
+
+.muted { color: var(--muted); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 8px 24px rgba(29,25,20,.04); }
+.card-lift { transition: transform .25s cubic-bezier(.23,1,.32,1), box-shadow .25s ease; }
+.card-lift:hover { transform: translateY(-5px); box-shadow: var(--shadow); }
+
+.field { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: #fff; color: var(--ink); min-height: 46px; padding: 0 13px; outline: none; transition: border .2s, box-shadow .2s; }
+.field:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(242,107,53,.12); }
+textarea.field { padding-top: 12px; min-height: 116px; resize: vertical; }
+
+@media (max-width: 720px) {
+  .container { padding-left: 18px; padding-right: 18px; }
+  .section { padding-top: 64px; padding-bottom: 64px; }
+}
+
+
+.scroll-reveal { opacity: 0; transform: translateY(22px); transition: opacity 680ms cubic-bezier(.23,1,.32,1), transform 680ms cubic-bezier(.23,1,.32,1); }
+.scroll-reveal-visible { opacity: 1; transform: translateY(0); }
+@media (prefers-reduced-motion: reduce) {
+  .scroll-reveal { opacity: 1; transform: none; transition: none; }
+}
