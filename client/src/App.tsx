@@ -15,8 +15,10 @@ import DestinationDetail from "./pages/DestinationDetail";
 import Services from "./pages/Services";
 import PlanMyTrip from "./pages/PlanMyTrip";
 import CustomerDashboard from "./pages/CustomerDashboard";
+import CustomerAccount from "./pages/CustomerAccount";
 import PaymentStatus from "./pages/PaymentStatus";
 import AdminDashboard from "./pages/AdminDashboard";
+import AdminCRM from "./pages/AdminCRM";
 import Login from "./pages/Login";
 import About from "./pages/About";
 import Contact from "./pages/Contact";
@@ -67,6 +69,12 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+      <Route path="/dashboard/:section">
+        <ProtectedRoute>
+          <CustomerAccount />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/payment-status">
         <ProtectedRoute>
           <PaymentStatus />
@@ -78,6 +86,12 @@ function Router() {
       <Route path="/admin">
         <ProtectedRoute requiredStaff>
           <AdminDashboard />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/crm">
+        <ProtectedRoute requiredStaff>
+          <AdminCRM />
         </ProtectedRoute>
       </Route>
 

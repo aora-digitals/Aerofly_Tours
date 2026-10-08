@@ -2,14 +2,17 @@ import { useState } from "react";
 import { CalendarDays, Check, Clock3, Loader2, MessageCircle, Phone, Video, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { recordCustomerActivity } from "@/lib/customer";
 
 type Props = { open?: boolean; onClose?: () => void; compact?: boolean };
 export default function CustomerCareBooking({ open = true, onClose, compact = false }: Props) {
   const [mode, setMode] = useState<"callback" | "appointment">("callback");
   const [sent, setSent] = useState<{ type: string; reference: string } | null>(null);
+  const { user } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", phone: "", reason: "Discuss a new trip", callbackDate: "", callbackTime: "", appointmentDate: "", appointmentTime: "", appointmentMode: "phone" as "phone" | "video" | "office", purpose: "Plan my trip", durationMinutes: 30 });
-  const callback = trpc.callback.request.useMutation({ onSuccess: ({ reference }) => { setSent({ type: "callback", reference }); toast.success("Callback request received"); }, onError: (error) => toast.error(error.message) });
-  const appointment = trpc.appointment.book.useMutation({ onSuccess: ({ reference }) => { setSent({ type: "appointment", reference }); toast.success("Appointment request received"); }, onError: (error) => toast.error(error.message) });
+  const callback = trpc.callback.request.useMutation({ onSuccess: ({ reference }) => { setSent({ type: "callback", reference }); if (user?.id) void recordCustomerActivity(user.id, "callback_requested", "callback").catch(() => undefined); toast.success("Callback request received"); }, onError: (error) => toast.error(error.message) });
+  const appointment = trpc.appointment.book.useMutation({ onSuccess: ({ reference }) => { setSent({ type: "appointment", reference }); if (user?.id) void recordCustomerActivity(user.id, "appointment_requested", "appointment").catch(() => undefined); toast.success("Appointment request received"); }, onError: (error) => toast.error(error.message) });
   if (!open) return null;
   const update = (key: keyof typeof form, value: string | number) => setForm((current) => ({ ...current, [key]: value }));
   const submit = (event: React.FormEvent) => { event.preventDefault(); if (mode === "callback") { callback.mutate({ name: form.name, email: form.email, phone: form.phone, reason: form.reason, preferredAt: form.callbackDate && form.callbackTime ? new Date(`${form.callbackDate}T${form.callbackTime}`) : undefined }); } else { appointment.mutate({ name: form.name, email: form.email, phone: form.phone, appointmentAt: new Date(`${form.appointmentDate}T${form.appointmentTime}`), durationMinutes: form.durationMinutes, mode: form.appointmentMode, purpose: form.purpose }); } };

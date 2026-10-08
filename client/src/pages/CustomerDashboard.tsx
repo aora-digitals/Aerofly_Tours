@@ -1,1145 +1,173 @@
-import {
-  useEffect,
-  useState,
-} from "react";
-
-import {
-  AlertCircle,
-  ArrowRight,
-  CalendarDays,
-  CheckCircle2,
-  Clock3,
-  CreditCard,
-  FileText,
-  LogOut,
-  MessageCircle,
-  Plane,
-  Receipt,
-  UserRound,
-} from "lucide-react";
-
+import { useCallback, useEffect, useState } from "react";
+import { ArrowRight, CalendarDays, Clock3, Eye, FileText, Heart, ListChecks, Loader2, Plane, RefreshCw } from "lucide-react";
 import { Link } from "wouter";
-import { toast } from "sonner";
-
 import { useAuth } from "@/_core/hooks/useAuth";
-import Header from "@/components/site/Header";
-import Footer from "@/components/site/Footer";
-import { trpc } from "@/lib/trpc";
-
-import { useCurrency } from "@/contexts/CurrencyContext";
-import CustomerCareBooking from "@/components/site/CustomerCareBooking";
+import CustomerLayout from "@/components/customer/CustomerLayout";
+import TourCard from "@/components/site/TourCard";
+import { Button } from "@/components/ui/button";
+import { getCustomerActivity, getCustomerOperationalData, getRecentlyViewedTours, getWishlist, type CustomerActivity } from "@/lib/customer";
 
 export default function CustomerDashboard() {
-  const {
-    user,
-    loading,
-    isAuthenticated,
-    logout,
-  } = useAuth();
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [data, setData] = useState<any>({ enquiries: [], callbacks: [], appointments: [], bookings: [], wishlist: [], recentlyViewed: [], activity: [] });
 
-  const {
-    data,
-    isLoading,
-    isError,
-    error,
-    refetch,
-  } = trpc.customer.dashboard.useQuery(undefined, {
-    enabled: isAuthenticated,
-    retry: 1,
-  });
-
-  const [careOpen, setCareOpen] =
-    useState(false);
-
-  const {
-    currency,
-    format,
-    checkoutNotice,
-  } = useCurrency();
-
-  const checkout =
-    trpc.customer.createCheckout.useMutation({
-      onSuccess: (result) => {
-        if (result.url) {
-          toast.success(
-            "Opening secure Stripe checkout"
-          );
-
-          window.open(
-            result.url,
-            "_blank",
-            "noopener,noreferrer"
-          );
-
-          return;
-        }
-
-        toast.error(
-          "Unable to create the secure checkout session."
-        );
-      },
-
-      onError: (checkoutError) => {
-        toast.error(
-          checkoutError.message ||
-            "Unable to start checkout."
-        );
-      },
-    });
-
-  /*
-   * Show payment return messages.
-   *
-   * Stripe redirects back to the dashboard with:
-   * ?payment=success
-   * ?payment=cancelled
-   */
-  useEffect(() => {
-    const status = new URLSearchParams(
-      window.location.search
-    ).get("payment");
-
-    if (status === "success") {
-      toast.success(
-        "Payment received. Your AeroFly travel desk will confirm the next step shortly."
-      );
-
-      return;
+  const load = useCallback(async () => {
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const [operational, wishlist, recentlyViewed, activity] = await Promise.all([
+        getCustomerOperationalData(user.id),
+        getWishlist(user.id),
+        getRecentlyViewedTours(user.id),
+        getCustomerActivity(user.id, 8),
+      ]);
+      setData({ ...operational, wishlist, recentlyViewed, activity });
+    } catch (loadError) {
+      const message = loadError instanceof Error ? loadError.message : "Unable to load your customer dashboard.";
+      setError(message);
+    } finally {
+      setLoading(false);
     }
+  }, [user]);
 
-    if (status === "cancelled") {
-      toast.message(
-        "Checkout was cancelled. Your quotation is still available here."
-      );
-    }
-  }, []);
+  useEffect(() => { void load(); }, [load]);
 
-  /*
-   * ----------------------------------------------------------
-   * Loading
-   * ----------------------------------------------------------
-   */
-
-  if (
-    loading ||
-    (isAuthenticated && isLoading)
-  ) {
-    return (
-      <div className="min-h-screen">
-        <Header />
-
-        <main className="bg-[#f3ede5]">
-          <div className="container py-32 text-center">
-            <div className="mx-auto h-8 w-8 animate-spin rounded-full border-2 border-[#f26b35] border-t-transparent" />
-
-            <p className="mt-5 text-[14px] text-[#6f6c66]">
-              Loading your travel desk…
-            </p>
-          </div>
-        </main>
-
-        <Footer />
-      </div>
-    );
+  if (authLoading) return <CustomerLoading />;
+  if (!isAuthenticated || !user) {
+    window.location.assign("/login?next=%2Fdashboard");
+    return null;
   }
 
-  /*
-   * ----------------------------------------------------------
-   * Unauthenticated state
-   *
-   * Supabase Auth is now the primary authentication system.
-   * Do NOT call the old startLogin() function here.
-   * ----------------------------------------------------------
-   */
-
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen">
-        <Header />
-
-        <main className="bg-[#f3ede5]">
-          <div className="container grid min-h-[650px] place-items-center py-20">
-            <div className="card w-full max-w-[440px] p-9 text-center">
-              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]">
-                <UserRound size={23} />
-              </div>
-
-              <div className="eyebrow mt-7">
-                Customer travel desk
-              </div>
-
-              <h1 className="mt-3 font-['Manrope'] text-3xl font-extrabold tracking-[-.04em]">
-                Your travel desk,
-                <br />
-                in one place.
-              </h1>
-
-              <p className="mt-4 text-[14px] leading-6 text-[#6f6c66]">
-                Sign in to view enquiries,
-                quotations, secure payments,
-                upcoming trips and receipts.
-              </p>
-
-              <button
-                type="button"
-                onClick={() => {
-                  window.location.assign(
-                    "/login?next=%2Fdashboard"
-                  );
-                }}
-                className="btn btn-primary mt-7 w-full"
-              >
-                Sign in to AeroFly
-                <ArrowRight size={15} />
-              </button>
-
-              <Link
-                href="/"
-                className="mt-5 inline-block text-[11px] font-bold text-[#77736c] hover:text-[#c94d1c]"
-              >
-                Back to AeroFly
-              </Link>
-            </div>
-          </div>
-        </main>
-
-        <Footer />
-      </div>
-    );
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Error state
-   * ----------------------------------------------------------
-   */
-
-  if (isError) {
-    return (
-      <div className="min-h-screen">
-        <Header />
-
-        <main className="bg-[#f3ede5]">
-          <div className="container grid min-h-[650px] place-items-center py-20">
-            <div className="card w-full max-w-[500px] p-9 text-center">
-              <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-[#fff0ec] text-[#b14a34]">
-                <AlertCircle size={23} />
-              </div>
-
-              <div className="eyebrow mt-7">
-                Travel desk unavailable
-              </div>
-
-              <h1 className="mt-3 font-['Manrope'] text-3xl font-extrabold">
-                We could not load your dashboard.
-              </h1>
-
-              <p className="mt-4 text-[14px] leading-6 text-[#6f6c66]">
-                Your account is still secure. Please
-                try again. If the problem continues,
-                contact the AeroFly travel desk.
-              </p>
-
-              {error?.message && (
-                <p className="mt-4 rounded-lg bg-[#f7f4ef] p-3 text-left text-[11px] leading-5 text-[#77736c]">
-                  {error.message}
-                </p>
-              )}
-
-              <div className="mt-7 flex flex-col gap-3 sm:flex-row">
-                <button
-                  type="button"
-                  onClick={() => {
-                    void refetch();
-                  }}
-                  className="btn btn-primary flex-1"
-                >
-                  Try again
-                  <ArrowRight size={15} />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    void logout();
-                  }}
-                  className="btn btn-ghost flex-1"
-                >
-                  Sign out
-                </button>
-              </div>
-            </div>
-          </div>
-        </main>
-
-        <Footer />
-      </div>
-    );
-  }
-
-  /*
-   * ----------------------------------------------------------
-   * Dashboard data
-   * ----------------------------------------------------------
-   */
-
-  const enquiries = data?.enquiries ?? [];
-  const bookings = data?.bookings ?? [];
-  const quotations = data?.quotations ?? [];
-  const payments = data?.payments ?? [];
-  const callbacks = data?.callbacks ?? [];
-  const appointments = data?.appointments ?? [];
-
-  const openEnquiries = enquiries.filter(
-    (enquiry) =>
-      enquiry.status !== "completed" &&
-      enquiry.status !== "cancelled"
-  );
-
-  const firstName =
-    user?.name?.trim().split(/\s+/)[0] ||
-    "traveller";
-
-  /*
-   * ----------------------------------------------------------
-   * Dashboard
-   * ----------------------------------------------------------
-   */
+  const firstName = user.name?.trim().split(/\s+/)[0] || "traveller";
+  const openEnquiries = data.enquiries.filter((item: any) => !["completed", "cancelled"].includes(item.status));
+  const upcomingAppointments = data.appointments.filter((item: any) => ["requested", "confirmed"].includes(item.status) && new Date(item.appointmentAt).getTime() >= Date.now()).slice(0, 3);
+  const upcomingBookings = data.bookings.filter((item: any) => !["cancelled", "completed"].includes(item.bookingStatus)).slice(0, 3);
 
   return (
-    <div className="min-h-screen">
-      <Header />
+    <CustomerLayout>
+      <div className="space-y-6">
+        <header className="flex flex-col justify-between gap-4 rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6 sm:flex-row sm:items-end sm:p-8">
+          <div>
+            <div className="eyebrow">Customer travel desk</div>
+            <h1 className="display mt-2 text-4xl font-extrabold sm:text-5xl">Good to see you, {firstName}.</h1>
+            <p className="mt-3 max-w-2xl text-[14px] leading-6 text-[#6f6c66]">Manage your AeroFly profile, preferences, saved journeys and conversations with our travel desk.</p>
+          </div>
+          <Button variant="outline" onClick={() => void load()} disabled={loading} className="gap-2 rounded-full">
+            <RefreshCw size={14} className={loading ? "animate-spin" : ""} /> Refresh
+          </Button>
+        </header>
 
-      <main className="bg-[#f3ede5] py-12 sm:py-16">
-        <div className="container">
+        {error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+            <div className="font-bold">We could not load your dashboard.</div>
+            <p className="mt-1">{error}</p>
+            <Button onClick={() => void load()} className="mt-4">Try again</Button>
+          </div>
+        )}
 
-          {/* ==================================================
-              HEADER
-              ================================================== */}
-
-          <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-end">
-            <div>
-              <div className="eyebrow">
-                Customer travel desk
-              </div>
-
-              <h1 className="display mt-3 text-4xl font-extrabold sm:text-6xl">
-                Good to see you,{" "}
-                {firstName}.
-              </h1>
-
-              <p className="mt-4 text-[14px] text-[#6f6c66]">
-                Here’s where your AeroFly journey picks
-                up.
-              </p>
+        {loading ? <DashboardSkeleton /> : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+              <Metric icon={Plane} label="Upcoming bookings" value={upcomingBookings.length} href="/dashboard/bookings" />
+              <Metric icon={FileText} label="Open enquiries" value={openEnquiries.length} href="/dashboard/enquiries" />
+              <Metric icon={Heart} label="Wishlist" value={data.wishlist.length} href="/dashboard/wishlist" />
+              <Metric icon={Eye} label="Recently viewed" value={data.recentlyViewed.length} href="/dashboard/recently-viewed" />
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                void logout();
-              }}
-              className="flex items-center gap-2 text-[12px] font-bold text-[#6f6c66] transition-colors hover:text-[#c94d1c]"
-            >
-              <LogOut size={14} />
-              Sign out
-            </button>
-          </div>
-
-          {/* ==================================================
-              SUMMARY CARDS
-              ================================================== */}
-
-          <div className="mt-10 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
-            <DashboardCard
-              icon={Plane}
-              label="Upcoming trips"
-              value={String(bookings.length)}
-            />
-
-            <DashboardCard
-              icon={FileText}
-              label="Open enquiries"
-              value={String(
-                openEnquiries.length
-              )}
-            />
-
-            <DashboardCard
-              icon={Receipt}
-              label="Quotations"
-              value={String(
-                quotations.length
-              )}
-            />
-
-            <DashboardCard
-              icon={CreditCard}
-              label="Payments"
-              value={String(
-                payments.length
-              )}
-            />
-          </div>
-
-          {/* ==================================================
-              CUSTOMER CARE
-              ================================================== */}
-
-          <div className="mt-6 grid gap-4 lg:grid-cols-2">
-            <section className="card bg-[#fbfaf8] p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="eyebrow">
-                    Customer care
-                  </div>
-
-                  <h2 className="mt-2 font-['Manrope'] text-xl font-extrabold">
-                    Need a person?
-                  </h2>
-
-                  <p className="mt-2 text-[12px] leading-5 text-[#6f6c66]">
-                    Request a callback or book a
-                    focused planning appointment.
-                  </p>
-                </div>
-
-                <MessageCircle
-                  size={19}
-                  className="text-[#f26b35]"
-                />
+            <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5">
+              <div className="eyebrow">Quick actions</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/tours" className="btn btn-ghost">Explore tours <ArrowRight size={14} /></Link>
+                <Link href="/dashboard/profile" className="btn btn-ghost">Update profile</Link>
+                <Link href="/dashboard/wishlist" className="btn btn-ghost">View wishlist</Link>
+                <Link href="/contact" className="btn btn-ghost">Contact AeroFly</Link>
               </div>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setCareOpen(true);
-                }}
-                className="btn btn-primary mt-5 min-h-9 px-3 text-[11px]"
-              >
-                Callback or appointment
-                <ArrowRight size={13} />
-              </button>
             </section>
 
-            <section className="card bg-[#fbfaf8] p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <div className="eyebrow">
-                    Your requests
-                  </div>
+            <div className="grid gap-6 xl:grid-cols-[1.25fr_.75fr]">
+              <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6 sm:p-7">
+                <SectionHeading eyebrow="Upcoming travel" title="Your next journeys" href="/dashboard/bookings" />
+                {upcomingBookings.length === 0 ? <Empty title="No upcoming bookings" copy="Your confirmed journeys will appear here. Booking checkout remains part of the next platform phase." href="/tours" action="Explore tours" /> : (
+                  <div className="mt-5 space-y-3">{upcomingBookings.map((booking: any) => <div key={booking.id} className="rounded-xl border border-[#eee9e1] p-4"><div className="flex flex-wrap items-center justify-between gap-3"><div><div className="font-extrabold">{booking.destination || "AeroFly journey"}</div><div className="mt-1 text-xs text-[#77736c]">{booking.reference} · {booking.travelDates || "Dates to be confirmed"}</div></div><Status value={booking.bookingStatus} /></div></div>)}</div>
+                )}
+              </section>
 
-                  <h2 className="mt-2 font-['Manrope'] text-xl font-extrabold">
-                    Care status
-                  </h2>
-                </div>
-
-                <CalendarDays
-                  size={19}
-                  className="text-[#f26b35]"
-                />
-              </div>
-
-              <div className="mt-4 space-y-3 text-[12px] text-[#6f6c66]">
-                <div className="flex items-center justify-between gap-4">
-                  <span>Callbacks</span>
-
-                  <strong className="font-bold text-[#262624]">
-                    {callbacks.length
-                      ? callbacks[0].status
-                      : "None yet"}
-                  </strong>
-                </div>
-
-                <div className="flex items-center justify-between gap-4">
-                  <span>
-                    Appointments
-                  </span>
-
-                  <strong className="font-bold text-[#262624]">
-                    {appointments.length
-                      ? appointments[0].status
-                      : "None yet"}
-                  </strong>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          {/* ==================================================
-              QUOTATIONS + CHECKOUT
-              ================================================== */}
-
-          <div className="mt-8 grid gap-6 lg:grid-cols-[1.1fr_.9fr]">
-            <section className="card bg-[#fbfaf8] p-6 sm:p-8">
-              <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-                <div>
-                  <div className="eyebrow">
-                    Your quotations
-                  </div>
-
-                  <h2 className="mt-2 font-['Manrope'] text-2xl font-extrabold">
-                    Choose your next step.
-                  </h2>
-                </div>
-
-                <Link
-                  href="/plan-my-trip"
-                  className="btn btn-dark min-h-9 px-3 text-[11px]"
-                >
-                  New request
-                </Link>
-              </div>
-
-              {quotations.length === 0 ? (
-                <Empty
-                  label="No quotations yet"
-                  copy="When your AeroFly advisor prepares an offer, it will appear here for review and secure payment."
-                />
-              ) : (
-                <div className="mt-7 space-y-3">
-                  {quotations.map(
-                    (quote) => (
-                      <div
-                        key={quote.id}
-                        className="rounded-xl border border-[#e8e4dd] p-4"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="font-['Manrope'] text-[15px] font-extrabold">
-                              {quote.destination}
-                            </div>
-
-                            <div className="mt-1 text-[12px] text-[#77736c]">
-                              {quote.reference}
-                              {" · "}
-                              {quote.travelDates}
-                              {" · "}
-                              {quote.travellers}{" "}
-                              traveller
-                              {quote.travellers ===
-                              1
-                                ? ""
-                                : "s"}
-                            </div>
-                          </div>
-
-                          <QuoteStatus
-                            status={
-                              quote.status
-                            }
-                          />
-                        </div>
-
-                        <div className="mt-4 flex flex-col justify-between gap-4 border-t border-[#eee9e1] pt-4 sm:flex-row sm:items-center">
-                          <div>
-                            <span className="text-[10px] font-bold uppercase tracking-[.13em] text-[#92928b]">
-                              Total
-                            </span>
-
-                            <div className="mt-1 font-['Manrope'] text-lg font-extrabold">
-                              {format(
-                                Number(
-                                  quote.total
-                                )
-                              )}
-                            </div>
-
-                            <div className="mt-1 text-[10px] font-normal text-[#92928b]">
-                              {currency} display ·
-                              checkout support
-                              is checked at
-                              payment
-                            </div>
-                          </div>
-
-                          {quote.status ===
-                            "accepted" && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                checkout.mutate(
-                                  {
-                                    quotationId:
-                                      quote.id,
-                                    requestedCurrency:
-                                      currency,
-                                  }
-                                );
-                              }}
-                              disabled={
-                                checkout.isPending
-                              }
-                              className="btn btn-primary"
-                            >
-                              <CreditCard
-                                size={15}
-                              />
-
-                              {checkout.isPending
-                                ? "Preparing checkout…"
-                                : "Pay securely"}
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  )}
-                </div>
-              )}
-            </section>
-
-            {/* ==================================================
-                CHECKOUT INFORMATION
-                ================================================== */}
-
-            <aside className="card bg-[#20201e] p-7 text-white">
-              <div className="eyebrow text-[#ffac88]">
-                Secure customer checkout
-              </div>
-
-              <h2 className="mt-3 font-['Manrope'] text-2xl font-extrabold">
-                Pay only when your quote is ready.
-              </h2>
-
-              <p className="mt-4 text-[13px] leading-6 text-white/65">
-                Payments are handled by Stripe in
-                a secure checkout window. AeroFly
-                never sees or stores your full card
-                details.
-              </p>
-
-              {checkoutNotice && (
-                <div className="mt-4 rounded-lg bg-[#fff7df] p-3 text-[11px] leading-5 text-[#8b671c]">
-                  {checkoutNotice}
-                </div>
-              )}
-
-              <div className="mt-7 space-y-3 text-[12px] text-white/70">
-                <CheckoutFeature>
-                  Card and supported wallet checkout
-                </CheckoutFeature>
-
-                <CheckoutFeature>
-                  Automatic booking confirmation
-                  after payment
-                </CheckoutFeature>
-
-                <CheckoutFeature>
-                  Receipt and payment status in this
-                  desk
-                </CheckoutFeature>
-              </div>
-            </aside>
-          </div>
-
-          {/* ==================================================
-              PAYMENT HISTORY
-              ================================================== */}
-
-          <section className="card mt-6 bg-[#fbfaf8] p-6 sm:p-8">
-            <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
-              <div>
-                <div className="eyebrow">
-                  Payment history
-                </div>
-
-                <h2 className="mt-2 font-['Manrope'] text-2xl font-extrabold">
-                  Your receipts and status.
-                </h2>
-              </div>
-
-              <div className="flex items-center gap-3">
-                <Link
-                  href="/payment-status"
-                  className="btn btn-ghost min-h-8 px-3 text-[11px]"
-                >
-                  Full status
-                </Link>
-
-                <CreditCard
-                  size={19}
-                  className="text-[#f26b35]"
-                />
-              </div>
+              <section className="rounded-2xl border border-[#e8e4dd] bg-[#20201e] p-6 text-white sm:p-7">
+                <div className="eyebrow text-[#ffac88]">Personalization foundation</div>
+                <h2 className="mt-2 text-2xl font-extrabold">Tell us how you like to travel.</h2>
+                <p className="mt-3 text-[13px] leading-6 text-white/65">Your preferences, saved tours and recent activity will later power AeroFly recommendations.</p>
+                <Link href="/dashboard/preferences" className="btn btn-primary mt-6">Set preferences <ArrowRight size={14} /></Link>
+              </section>
             </div>
 
-            {payments.length === 0 ? (
-              <Empty
-                label="No payments yet"
-                copy="Completed online payments and receipts will appear here."
-              />
-            ) : (
-              <div className="mt-7 overflow-hidden rounded-xl border border-[#e8e4dd]">
-                {/* Desktop header */}
-                <div className="hidden grid-cols-[1.1fr_1fr_.8fr_.8fr] gap-4 bg-[#f3ede5] px-4 py-3 text-[10px] font-bold uppercase tracking-[.12em] text-[#92928b] sm:grid">
-                  <span>Reference</span>
-                  <span>Journey</span>
-                  <span>Date</span>
-                  <span className="text-right">
-                    Status
-                  </span>
-                </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
+                <SectionHeading eyebrow="Enquiries" title="Recent conversations" href="/dashboard/enquiries" />
+                {data.enquiries.length === 0 ? <Empty title="No enquiries yet" copy="Ask AeroFly to shape a route around your dates and travel style." href="/tours" action="Explore tours" /> : <div className="mt-5 space-y-3">{data.enquiries.slice(0, 4).map((item: any) => <div key={item.id} className="rounded-xl border border-[#eee9e1] p-4"><div className="flex justify-between gap-3"><div><div className="font-bold">{item.destination || "Custom trip"}</div><div className="mt-1 text-xs text-[#77736c]">{item.reference} · {new Date(item.createdAt).toLocaleDateString()}</div></div><Status value={item.status} /></div></div>)}</div>}
+              </section>
 
-                <div className="divide-y divide-[#eee9e1]">
-                  {payments.map((payment) => (
-  <PaymentRow
-    key={payment?.payment?.id}
-    payment={payment}
-    format={format}
-  />
-))}
-                </div>
+              <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
+                <SectionHeading eyebrow="Appointments & callbacks" title="Your support requests" />
+                {upcomingAppointments.length === 0 && data.callbacks.length === 0 ? <Empty title="Nothing scheduled" copy="Request a callback or appointment when you need help from the travel desk." href="/contact" action="Contact AeroFly" /> : <div className="mt-5 space-y-3">{upcomingAppointments.map((item: any) => <div key={`a-${item.id}`} className="rounded-xl border border-[#eee9e1] p-4"><div className="flex items-center gap-3"><CalendarDays size={16} className="text-[#f26b35]" /><div><div className="font-bold">Appointment · {item.mode}</div><div className="mt-1 text-xs text-[#77736c]">{new Date(item.appointmentAt).toLocaleString()} · {item.status}</div></div></div></div>)}{data.callbacks.slice(0, 2).map((item: any) => <div key={`c-${item.id}`} className="rounded-xl border border-[#eee9e1] p-4"><div className="flex items-center gap-3"><Clock3 size={16} className="text-[#f26b35]" /><div><div className="font-bold">Callback request</div><div className="mt-1 text-xs text-[#77736c]">{item.reference} · {item.status}</div></div></div></div>)}</div>}
+              </section>
+            </div>
+
+            <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
+              <SectionHeading eyebrow="Recommended tours" title="Personalized journeys — coming next" />
+              <div className="mt-5 rounded-xl border border-dashed border-[#dcd4c9] bg-[#fbf8f3] p-5 text-[12px] leading-5 text-[#77736c]">
+                Recommendations are intentionally a placeholder in Phase 3. Preferences, wishlist, recent views and enquiries are now stored in a clean foundation for the future recommendation engine.
               </div>
-            )}
-          </section>
+            </section>
 
-          {/* ==================================================
-              EMPTY / INFORMATIONAL FOOTER
-              ================================================== */}
+            <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
+              <SectionHeading eyebrow="Notifications" title="Travel desk updates" href="/dashboard/notifications" />
+              <div className="mt-5 rounded-xl bg-[#f8f4ee] p-4 text-[12px] leading-5 text-[#6f6c66]">
+                <span className="font-bold text-[#20201e]">Notifications are ready as a customer-platform placeholder.</span> Delivery channels and staff-triggered notifications will be connected in the operational workflow later.
+              </div>
+            </section>
 
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            <InfoCard
-              icon={Plane}
-              title="Your journey"
-              copy="Keep your trip details, requests and booking activity together."
-              href="/tours"
-              label="Explore tours"
-            />
+            <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
+              <SectionHeading eyebrow="Saved journeys" title="Your wishlist" href="/dashboard/wishlist" />
+              {data.wishlist.length === 0 ? <Empty title="Your wishlist is empty" copy="Save tours you want to compare later." href="/tours" action="Browse tours" /> : <div className="mt-5 grid gap-5 md:grid-cols-2">{data.wishlist.slice(0, 2).map((item: any) => item.tours && <TourCard key={item.id} tour={mapTour(item.tours)} />)}</div>}
+            </section>
 
-            <InfoCard
-              icon={Clock3}
-              title="Need help?"
-              copy="Our travel desk can help with planning, callbacks and appointments."
-              onClick={() => {
-                setCareOpen(true);
-              }}
-              label="Contact customer care"
-            />
-
-            <InfoCard
-              icon={Receipt}
-              title="Payment status"
-              copy="Review payment progress and receipts from your customer workspace."
-              href="/payment-status"
-              label="View payments"
-            />
-          </div>
-        </div>
-      </main>
-
-      <Footer />
-
-      {/* ======================================================
-          CUSTOMER CARE MODAL
-          ====================================================== */}
-
-      {careOpen && (
-        <CustomerCareBooking
-          open={careOpen}
-          onClose={() => setCareOpen(false)}
-        />
-      )}
-    </div>
+            <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
+              <SectionHeading eyebrow="Recent activity" title="Your AeroFly trail" href="/dashboard/activity" />
+              {data.activity.length === 0 ? <Empty title="No recent activity" copy="Tour views, wishlist actions and customer interactions will appear here." /> : <div className="mt-5 grid gap-3 sm:grid-cols-2">{data.activity.slice(0, 6).map((item: CustomerActivity) => <ActivityRow key={item.id} activity={item} />)}</div>}
+            </section>
+          </>
+        )}
+      </div>
+    </CustomerLayout>
   );
 }
 
-/* ============================================================
-   Dashboard summary card
-   ============================================================ */
-
-type DashboardCardProps = {
-  icon: React.ComponentType<{
-    size?: number;
-    className?: string;
-  }>;
-  label: string;
-  value: string;
-};
-
-function DashboardCard({
-  icon: Icon,
-  label,
-  value,
-}: DashboardCardProps) {
-  return (
-    <div className="card bg-[#fbfaf8] p-5">
-      <div className="flex items-center justify-between gap-4">
-        <div>
-          <div className="text-[10px] font-bold uppercase tracking-[.13em] text-[#92928b]">
-            {label}
-          </div>
-
-          <div className="mt-2 font-['Manrope'] text-3xl font-extrabold tracking-[-.04em]">
-            {value}
-          </div>
-        </div>
-
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]">
-          <Icon size={18} />
-        </div>
-      </div>
-    </div>
-  );
+function Metric({ icon: Icon, label, value, href }: any) {
+  return <Link href={href}><div className="cursor-pointer rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5 transition hover:-translate-y-0.5 hover:shadow-sm"><div className="flex items-center justify-between"><div className="grid h-10 w-10 place-items-center rounded-xl bg-[#fff0e8] text-[#f26b35]"><Icon size={18} /></div><ArrowRight size={15} className="text-[#aaa49c]" /></div><div className="mt-5 text-2xl font-extrabold">{value}</div><div className="mt-1 text-[11px] font-bold uppercase tracking-[.12em] text-[#92928b]">{label}</div></div></Link>;
 }
 
-/* ============================================================
-   Quote status
-   ============================================================ */
-
-type QuoteStatusProps = {
-  status: string;
-};
-
-function QuoteStatus({
-  status,
-}: QuoteStatusProps) {
-  const normalized =
-    status.toLowerCase();
-
-  const className =
-    normalized === "accepted"
-      ? "bg-[#e9f5ed] text-[#3f7b4b]"
-      : normalized === "rejected"
-        ? "bg-[#fff0ec] text-[#b14a34]"
-        : "bg-[#fff0e8] text-[#c94d1c]";
-
-  return (
-    <span
-      className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.11em] ${className}`}
-    >
-      {status}
-    </span>
-  );
+function SectionHeading({ eyebrow, title, href }: any) {
+  return <div className="flex items-end justify-between gap-3"><div><div className="eyebrow">{eyebrow}</div><h2 className="mt-1 text-2xl font-extrabold">{title}</h2></div>{href && <Link href={href} className="text-[11px] font-bold text-[#c94d1c]">View all <ArrowRight size={12} className="inline" /></Link>}</div>;
 }
 
-/* ============================================================
-   Payment row
-   ============================================================ */
-
-type PaymentRowProps = {
-  payment: {
-    payment: {
-      id: number;
-      reference: string;
-      bookingId: number | null;
-      quotationId: number | null;
-      receivedBy: number;
-      amount: string;
-      settlementCurrency: string;
-      method: "upi" | "bank_transfer" | "card" | "cash" | "other";
-      createdAt: Date;
-      [key: string]: unknown;
-    };
-    quotation: {
-      id: number;
-      reference?: string | null;
-      destination?: string | null;
-      [key: string]: unknown;
-    } | null;
-    booking: {
-      id: number;
-      reference?: string | null;
-      [key: string]: unknown;
-    } | null;
-  };
-  format: (amount: number) => string;
-};
-
-function PaymentRow({ payment, format }: PaymentRowProps) {
-  const record = payment.payment;
-
-  const quotation = payment.quotation;
-  const booking = payment.booking;
-
-  const journey =
-    quotation?.destination ??
-    booking?.reference ??
-    quotation?.reference ??
-    "AeroFly booking";
-
-  const date = new Date(record.createdAt);
-
-  return (
-    <div className="grid gap-3 border-t border-[#eee9e1] px-4 py-4 sm:grid-cols-[1.1fr_1fr_.8fr_.8fr] sm:items-center">
-      <div>
-        <div className="font-semibold text-[#20201e]">
-          {record.reference}
-        </div>
-
-        <div className="mt-1 text-[10px] text-[#92928b]">
-          {record.method.replace("_", " ")}
-        </div>
-      </div>
-
-      <div className="text-[12px] text-[#6f6c66]">
-        {journey}
-      </div>
-
-      <div className="text-[12px] text-[#6f6c66]">
-        {date.toLocaleDateString("en-IN", {
-          day: "2-digit",
-          month: "short",
-          year: "numeric",
-        })}
-      </div>
-
-      <div className="sm:text-right">
-        <div className="font-['Manrope'] font-extrabold text-[#20201e]">
-          {format(Number(record.amount))}
-        </div>
-
-        <div className="mt-1 text-[10px] font-bold uppercase tracking-[.08em] text-[#3f7b4b]">
-          Received
-        </div>
-      </div>
-    </div>
-  );
+function Empty({ title, copy, href, action }: any) {
+  return <div className="mt-5 rounded-xl border border-dashed border-[#ddd5ca] bg-[#fbf8f3] p-6"><div className="font-bold">{title}</div><p className="mt-1 text-[12px] leading-5 text-[#77736c]">{copy}</p>{href && <Link href={href} className="btn btn-ghost mt-4 inline-flex">{action}</Link>}</div>;
 }
 
-// function PaymentRow({
-//   payment,
-//   format,
-// }: PaymentRowProps) {
-//   const rawDate =
-//     payment.createdAt ??
-//     payment.date;
-
-//   const formattedDate = rawDate
-//     ? formatDate(rawDate)
-//     : "—";
-
-//   const paymentStatus =
-//     payment.status || "unknown";
-
-//   const statusClass =
-//     paymentStatus.toLowerCase() ===
-//     "paid"
-//       ? "bg-[#e9f5ed] text-[#3f7b4b]"
-//       : paymentStatus.toLowerCase() ===
-//           "succeeded"
-//         ? "bg-[#e9f5ed] text-[#3f7b4b]"
-//         : paymentStatus.toLowerCase() ===
-//             "failed"
-//           ? "bg-[#fff0ec] text-[#b14a34]"
-//           : paymentStatus.toLowerCase() ===
-//               "cancelled"
-//             ? "bg-[#f0efec] text-[#77736c]"
-//             : "bg-[#fff0e8] text-[#c94d1c]";
-
-//   return (
-//     <div className="grid gap-3 px-4 py-4 sm:grid-cols-[1.1fr_1fr_.8fr_.8fr] sm:items-center sm:gap-4">
-//       {/* Reference */}
-//       <div>
-//         <div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#92928b] sm:hidden">
-//           Reference
-//         </div>
-
-//         <div className="mt-1 font-['Manrope'] text-[13px] font-extrabold sm:mt-0">
-//           {payment.reference ||
-//             payment.id}
-//         </div>
-
-//         {payment.amount !==
-//           undefined &&
-//           payment.amount !== null && (
-//             <div className="mt-1 text-[11px] text-[#77736c]">
-//               {format(
-//                 Number(payment.amount)
-//               )}
-//               {payment.currency
-//                 ? ` ${payment.currency}`
-//                 : ""}
-//             </div>
-//           )}
-//       </div>
-
-//       {/* Journey */}
-//       <div>
-//         <div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#92928b] sm:hidden">
-//           Journey
-//         </div>
-
-//         <div className="mt-1 text-[12px] text-[#6f6c66] sm:mt-0">
-//           {payment.destination ||
-//             payment.quotationId ||
-//             "AeroFly booking"}
-//         </div>
-//       </div>
-
-//       {/* Date */}
-//       <div>
-//         <div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#92928b] sm:hidden">
-//           Date
-//         </div>
-
-//         <div className="mt-1 text-[12px] text-[#6f6c66] sm:mt-0">
-//           {formattedDate}
-//         </div>
-//       </div>
-
-//       {/* Status */}
-//       <div className="sm:text-right">
-//         <div className="text-[10px] font-bold uppercase tracking-[.1em] text-[#92928b] sm:hidden">
-//           Status
-//         </div>
-
-//         <span
-//           className={`mt-1 inline-flex rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-[.1em] sm:mt-0 ${statusClass}`}
-//         >
-//           {paymentStatus}
-//         </span>
-//       </div>
-//     </div>
-//   );
-// }
-
-/* ============================================================
-   Checkout feature
-   ============================================================ */
-
-function CheckoutFeature({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="flex items-center gap-3">
-      <CheckCircle2
-        size={15}
-        className="shrink-0 text-[#a9d2ad]"
-      />
-
-      <span>{children}</span>
-    </div>
-  );
+function Status({ value }: { value: string | null }) {
+  return <span className="rounded-full bg-[#f3ede5] px-2.5 py-1 text-[10px] font-bold capitalize text-[#6f6c66]">{String(value || "pending").replaceAll("_", " ")}</span>;
 }
 
-/* ============================================================
-   Empty state
-   ============================================================ */
-
-function Empty({
-  label,
-  copy,
-}: {
-  label: string;
-  copy: string;
-}) {
-  return (
-    <div className="mt-7 rounded-xl border border-dashed border-[#ded8cf] bg-[#f8f5f0] p-7 text-center">
-      <div className="mx-auto grid h-10 w-10 place-items-center rounded-full bg-white text-[#f26b35]">
-        <FileText size={17} />
-      </div>
-
-      <h3 className="mt-4 font-['Manrope'] text-[14px] font-extrabold">
-        {label}
-      </h3>
-
-      <p className="mx-auto mt-2 max-w-[440px] text-[12px] leading-5 text-[#77736c]">
-        {copy}
-      </p>
-    </div>
-  );
+function ActivityRow({ activity }: { activity: CustomerActivity }) {
+  return <div className="flex gap-3 rounded-xl border border-[#eee9e1] p-4"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]"><ListChecks size={15} /></div><div className="min-w-0"><div className="text-[12px] font-bold capitalize">{activity.activity_type.replaceAll("_", " ")}</div><div className="mt-1 text-[11px] text-[#77736c]">{new Date(activity.created_at).toLocaleString()}</div></div></div>;
 }
 
-/* ============================================================
-   Informational card
-   ============================================================ */
-
-type InfoCardProps = {
-  icon: React.ComponentType<{
-    size?: number;
-    className?: string;
-  }>;
-  title: string;
-  copy: string;
-  href?: string;
-  label: string;
-  onClick?: () => void;
-};
-
-function InfoCard({
-  icon: Icon,
-  title,
-  copy,
-  href,
-  label,
-  onClick,
-}: InfoCardProps) {
-  const content = (
-    <>
-      <div className="flex items-start justify-between gap-4">
-        <div className="grid h-10 w-10 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]">
-          <Icon size={18} />
-        </div>
-
-        <ArrowRight
-          size={15}
-          className="text-[#aaa49b]"
-        />
-      </div>
-
-      <h3 className="mt-5 font-['Manrope'] text-[15px] font-extrabold">
-        {title}
-      </h3>
-
-      <p className="mt-2 text-[12px] leading-5 text-[#77736c]">
-        {copy}
-      </p>
-
-      <div className="mt-4 text-[11px] font-bold text-[#c94d1c]">
-        {label}
-      </div>
-    </>
-  );
-
-  if (href) {
-    return (
-      <Link
-        href={href}
-        className="card bg-[#fbfaf8] p-5 transition-transform hover:-translate-y-0.5"
-      >
-        {content}
-      </Link>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="card bg-[#fbfaf8] p-5 text-left transition-transform hover:-translate-y-0.5"
-    >
-      {content}
-    </button>
-  );
+function mapTour(tour: any) {
+  return { slug: tour.slug, title: tour.title, destination: tour.destinations?.name ?? "", country: tour.destinations?.country ?? "", durationDays: tour.durationDays, durationNights: tour.durationNights, priceFrom: tour.priceFrom, originalPrice: tour.originalPrice, rating: tour.rating ?? 0, reviewCount: tour.reviewCount ?? 0, imageUrl: tour.imageUrl ?? "", tags: tour.tags, category: tour.tour_categories?.name, availability: tour.availability };
 }
 
-/* ============================================================
-   Date formatting
-   ============================================================ */
-
-function formatDate(
-  value: string | Date
-): string {
-  const date =
-    value instanceof Date
-      ? value
-      : new Date(value);
-
-  if (
-    Number.isNaN(date.getTime())
-  ) {
-    return String(value);
-  }
-
-  return new Intl.DateTimeFormat(
-    "en-IN",
-    {
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-    }
-  ).format(date);
-}
+function CustomerLoading() { return <div className="grid min-h-screen place-items-center bg-[#f3ede5]"><div className="text-center"><Loader2 className="mx-auto animate-spin text-[#f26b35]" /><p className="mt-3 text-sm text-[#6f6c66]">Loading your AeroFly account…</p></div></div>; }
+function DashboardSkeleton() { return <div className="grid gap-6"><div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{Array.from({ length: 4 }).map((_, i) => <div key={i} className="h-32 animate-pulse rounded-2xl bg-white/70" />)}</div><div className="h-72 animate-pulse rounded-2xl bg-white/70" /></div>; }

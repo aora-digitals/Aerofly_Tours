@@ -18,9 +18,7 @@ import {
   getFinanceSummary,
   getMonthlyStripeRevenue,
   getSettings,
-  getTourBySlug,
   listAdminDestinations,
-  listAdminEnquiries,
   listAdminTours,
   listCustomerAppointments,
   listFinancePayments,
@@ -34,8 +32,6 @@ import {
   listCustomerEnquiries,
   listCustomerPayments,
   listCustomerQuotations,
-  listSupportAppointments,
-  listSupportCallbacks,
   listDestinations,
   listTestimonials,
   listTours,
@@ -45,13 +41,26 @@ import {
   recordPayment,
   updateQuotationStatus,
   updateTeamMemberRole,
-  updateAppointment,
-  updateCallbackRequest,
   updateDestinationRecord,
   updateTourRecord,
 } from "./db";
 import { createCustomerCheckout, refundCustomerPayment } from "./stripe";
+import {
+  getPublicDestinationBySlug,
+  getPublicHomepage,
+  getPublicServiceBySlug,
+  getPublicTourBySlug,
+  listPublicCategories,
+  listPublicDestinations,
+  listPublicServices,
+  listPublicTours,
+  recordPublicTourView,
+} from "./publicCatalog";
 import { detectCurrency } from "./currency";
+import { createCustomerAppointment, createCustomerCallback, createCustomerEnquiry } from "./customer";
+import {
+  addAppointmentNote, addCallbackNote, addEnquiryNote, assignCrmEnquiry, getCrmCustomer, getCrmDashboard, getCrmEnquiry, listCrmAppointments, listCrmCallbacks, listCrmCustomers, listCrmDepartments, listCrmEnquiries, listCrmStaff, updateCrmAppointment, updateCrmCallback, updateCrmEnquiry,
+} from "./crm";
 
 const permissionProcedure = (permission: WorkspacePermission) => protectedProcedure.use(({ ctx, next }) => {
   if (!hasWorkspacePermission(ctx.user.role, permission)) throw new TRPCError({ code: "FORBIDDEN", message: `This workspace action requires the ${permission} permission` });
@@ -159,31 +168,51 @@ export const appRouter = router({
   }),
   content: router({
     home: publicProcedure.query(async () => {
-      const [featuredTours, destinations, categories, blogs, testimonials, settings] = await Promise.all([
-        listTours({ featured: true, limit: 6 }),
-        listDestinations(),
-        listCategories(),
+      const [catalogue, blogs, testimonials, settings] = await Promise.all([
+        getPublicHomepage(),
         listBlogPosts(3),
         listTestimonials(),
         getSettings(),
       ]);
-      return { featuredTours, destinations, categories, blogs, testimonials, settings };
+      return { ...catalogue, blogs, testimonials, settings };
     }),
-    tours: publicProcedure.input(z.object({ search: z.string().optional(), kind: z.enum(["domestic", "international"]).optional(), category: z.string().optional() }).optional()).query(({ input }) => listTours(input ?? {})),
-    tour: publicProcedure.input(z.object({ slug: z.string() })).query(({ input }) => getTourBySlug(input.slug)),
-    destinations: publicProcedure.input(z.object({ kind: z.enum(["domestic", "international"]).optional() }).optional()).query(({ input }) => listDestinations(input?.kind)),
-    categories: publicProcedure.query(() => listCategories()),
+    tours: publicProcedure.input(z.object({
+      search: z.string().optional(),
+      kind: z.enum(["domestic", "international"]).optional(),
+      category: z.string().optional(),
+      destination: z.string().optional(),
+      minPrice: z.number().nonnegative().optional(),
+      maxPrice: z.number().nonnegative().optional(),
+      minDuration: z.number().int().positive().optional(),
+      maxDuration: z.number().int().positive().optional(),
+      travelType: z.string().optional(),
+      sort: z.enum(["featured", "newest", "price_asc", "price_desc", "duration", "rating", "popular", "most_enquired"]).optional(),
+      page: z.number().int().positive().optional(),
+      pageSize: z.number().int().min(1).max(48).optional(),
+    }).optional()).query(({ input }) => listPublicTours(input ?? {})),
+    tour: publicProcedure.input(z.object({ slug: z.string().min(1) })).query(({ input }) => getPublicTourBySlug(input.slug)),
+    recordTourView: publicProcedure.input(z.object({ tourId: z.number().int().positive() })).mutation(({ input }) => recordPublicTourView(input.tourId)),
+    destinations: publicProcedure.input(z.object({
+      search: z.string().optional(),
+      kind: z.enum(["domestic", "international"]).optional(),
+      region: z.string().optional(),
+      featured: z.boolean().optional(),
+    }).optional()).query(({ input }) => listPublicDestinations(input ?? {})),
+    destination: publicProcedure.input(z.object({ slug: z.string().min(1) })).query(({ input }) => getPublicDestinationBySlug(input.slug)),
+    categories: publicProcedure.query(() => listPublicCategories()),
+    services: publicProcedure.query(() => listPublicServices()),
+    service: publicProcedure.input(z.object({ slug: z.string().min(1) })).query(({ input }) => getPublicServiceBySlug(input.slug)),
     blog: publicProcedure.query(() => listBlogPosts(12)),
   }),
   enquiries: router({
-    create: publicProcedure.input(enquiryInput).mutation(async ({ ctx, input }) => createEnquiry({ ...input, userId: ctx.user?.id })),
+    create: publicProcedure.input(enquiryInput).mutation(async ({ ctx, input }) => ctx.user ? createCustomerEnquiry(ctx.user, input, ctx.supabaseAccessToken ?? undefined) : createEnquiry(input)),
     mine: protectedProcedure.query(({ ctx }) => listCustomerEnquiries(ctx.user.id)),
   }),
   callback: router({
-    request: publicProcedure.input(callbackInput).mutation(({ ctx, input }) => createCallbackRequest({ ...input, userId: ctx.user?.id })),
+    request: publicProcedure.input(callbackInput).mutation(({ ctx, input }) => ctx.user ? createCustomerCallback(ctx.user, input, ctx.supabaseAccessToken ?? undefined) : createCallbackRequest(input)),
   }),
   appointment: router({
-    book: publicProcedure.input(appointmentInput).mutation(({ ctx, input }) => createAppointment({ ...input, userId: ctx.user?.id })),
+    book: publicProcedure.input(appointmentInput).mutation(({ ctx, input }) => ctx.user ? createCustomerAppointment(ctx.user, input, ctx.supabaseAccessToken ?? undefined) : createAppointment(input)),
   }),
   currency: router({
     config: publicProcedure.query(({ ctx }) => detectCurrency(ctx.req.headers as Record<string, unknown>)),
@@ -193,7 +222,102 @@ export const appRouter = router({
       const [enquiries, bookings, quotations, payments, callbacks, appointments] = await Promise.all([listCustomerEnquiries(ctx.user.id), listCustomerBookings(ctx.user.id), listCustomerQuotations(ctx.user.id), listCustomerPayments(ctx.user.id), listCustomerCallbacks(ctx.user.id), listCustomerAppointments(ctx.user.id)]);
       return { enquiries, bookings, quotations, payments, callbacks, appointments, user: ctx.user };
     }),
-    createCheckout: protectedProcedure.input(z.object({ quotationId: z.number().int().positive(), requestedCurrency: z.string().length(3).optional() })).mutation(({ ctx, input }) => createCustomerCheckout({ quotationId: input.quotationId, requestedCurrency: input.requestedCurrency, user: ctx.user, origin: ctx.req.headers.origin ?? `${ctx.req.protocol}://${ctx.req.get("host")}` })),
+createCheckout: protectedProcedure
+  .input(
+    z.object({
+      quotationId: z.number().int().positive(),
+      requestedCurrency: z.string().length(3).optional(),
+    })
+  )
+  .mutation(({ ctx, input }) =>
+    createCustomerCheckout({
+      quotationId: input.quotationId,
+      requestedCurrency: input.requestedCurrency,
+      user: ctx.user as import("./db.ts").User,
+      origin:
+        ctx.req.headers.origin ??
+        `${ctx.req.protocol}://${ctx.req.get("host")}`,
+    })
+  ),
+  }),
+  crm: router({
+    dashboard: permissionProcedure("crm").query(({ ctx }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return getCrmDashboard(ctx.supabaseAccessToken);
+    }),
+    enquiries: permissionProcedure("crm").input(z.object({
+      page: z.number().int().positive().optional(),
+      pageSize: z.number().int().min(10).max(50).optional(),
+      search: z.string().max(80).optional(),
+      status: z.enum(["new","assigned","contacted","follow_up","qualified","quotation","converted","confirmed","completed","lost","closed","cancelled"]).optional(),
+      priority: z.enum(["low","normal","high"]).optional(),
+      assignedEmployeeId: z.string().uuid().optional(),
+      departmentId: z.string().uuid().optional(),
+    }).optional()).query(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return listCrmEnquiries(ctx.supabaseAccessToken, input ?? {});
+    }),
+    enquiry: permissionProcedure("crm").input(z.object({ id: z.number().int().positive() })).query(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return getCrmEnquiry(ctx.supabaseAccessToken, input.id);
+    }),
+    updateEnquiry: permissionProcedure("crm").input(z.object({
+      id: z.number().int().positive(),
+      status: z.enum(["new","assigned","contacted","follow_up","qualified","quotation","converted","confirmed","completed","lost","closed","cancelled"]).optional(),
+      priority: z.enum(["low","normal","high"]).optional(),
+      source: z.string().max(80).optional(),
+      followUpAt: z.string().datetime().nullable().optional(),
+      destination: z.string().max(160).nullable().optional(),
+      travelDates: z.string().max(160).nullable().optional(),
+      travellers: z.number().int().min(1).max(100).optional(),
+      budget: z.string().max(120).nullable().optional(),
+      tripType: z.string().max(120).nullable().optional(),
+    }).refine((value) => Object.keys(value).some((key) => key !== "id"), "Provide at least one field to update")).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return updateCrmEnquiry(ctx.supabaseAccessToken, input);
+    }),
+    assignEnquiry: permissionProcedure("crm").input(z.object({ enquiryId: z.number().int().positive(), employeeId: z.string().uuid(), departmentId: z.string().uuid() })).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return assignCrmEnquiry(ctx.supabaseAccessToken, input);
+    }),
+    addEnquiryNote: permissionProcedure("crm").input(z.object({ enquiryId: z.number().int().positive(), body: z.string().min(1).max(5000) })).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return addEnquiryNote(ctx.supabaseAccessToken, input.enquiryId, input.body);
+    }),
+    customers: permissionProcedure("crm").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().min(10).max(50).optional(), search: z.string().max(80).optional() }).optional()).query(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return listCrmCustomers(ctx.supabaseAccessToken, input ?? {});
+    }),
+    customer: permissionProcedure("crm").input(z.object({ id: z.string().uuid() })).query(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return getCrmCustomer(ctx.supabaseAccessToken, input.id);
+    }),
+    addAppointmentNote: permissionProcedure("crm").input(z.object({ appointmentId: z.number().int().positive(), body: z.string().min(1).max(5000) })).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return addAppointmentNote(ctx.supabaseAccessToken, input.appointmentId, input.body);
+    }),
+    appointments: permissionProcedure("crm").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().min(10).max(50).optional() }).optional()).query(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return listCrmAppointments(ctx.supabaseAccessToken, input?.page ?? 1, input?.pageSize ?? 20);
+    }),
+    updateAppointment: permissionProcedure("crm").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested","confirmed","rescheduled","completed","cancelled","no_show"]).optional(), assignedEmployeeId: z.string().uuid().nullable().optional(), assignedDepartmentId: z.string().uuid().nullable().optional(), meetingLink: z.string().url().nullable().optional(), followUpAt: z.string().datetime().nullable().optional(), notes: z.string().max(5000).nullable().optional() })).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return updateCrmAppointment(ctx.supabaseAccessToken, input);
+    }),
+    addCallbackNote: permissionProcedure("crm").input(z.object({ callbackId: z.number().int().positive(), body: z.string().min(1).max(5000) })).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return addCallbackNote(ctx.supabaseAccessToken, input.callbackId, input.body);
+    }),
+    callbacks: permissionProcedure("crm").input(z.object({ page: z.number().int().positive().optional(), pageSize: z.number().int().min(10).max(50).optional() }).optional()).query(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return listCrmCallbacks(ctx.supabaseAccessToken, input?.page ?? 1, input?.pageSize ?? 20);
+    }),
+    updateCallback: permissionProcedure("crm").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested","pending","assigned","in_progress","scheduled","completed","cancelled"]).optional(), priority: z.enum(["low","normal","high"]).optional(), assignedEmployeeId: z.string().uuid().nullable().optional(), assignedDepartmentId: z.string().uuid().nullable().optional(), notes: z.string().max(5000).nullable().optional() })).mutation(({ ctx, input }) => {
+      if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
+      return updateCrmCallback(ctx.supabaseAccessToken, input);
+    }),
+    staff: permissionProcedure("crm").query(() => listCrmStaff()),
+    departments: permissionProcedure("crm").query(() => listCrmDepartments()),
   }),
   ai: router({
     tripPlanner: publicProcedure.input(z.object({
@@ -221,9 +345,16 @@ export const appRouter = router({
     }),
   }),
   admin: router({
-    overview: permissionProcedure("overview").query(async () => {
-      const [stats, enquiries] = await Promise.all([getAdminStats(), listAdminEnquiries()]);
-      return { stats, enquiries };
+    overview: permissionProcedure("overview").query(async ({ ctx }) => {
+      const stats = await getAdminStats();
+      if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) {
+        return { stats: { ...stats, enquiries: 0, newEnquiries: 0 }, enquiries: [] };
+      }
+      const pipeline = await listCrmEnquiries(ctx.supabaseAccessToken, { page: 1, pageSize: 8 });
+      return {
+        stats: { ...stats, enquiries: pipeline.total, newEnquiries: pipeline.items.filter((item: any) => item.status === "new").length },
+        enquiries: pipeline.items,
+      };
     }),
     catalogue: router({
       list: permissionProcedure("catalogue").query(async () => {
@@ -263,12 +394,19 @@ export const appRouter = router({
       refundPayment: permissionProcedure("finance").input(z.object({ paymentId: z.number().int().positive() })).mutation(({ input }) => refundCustomerPayment(input.paymentId)),
     }),
     support: router({
-      dashboard: permissionProcedure("enquiries").query(async () => {
-        const [callbacks, appointments] = await Promise.all([listSupportCallbacks(), listSupportAppointments()]);
-        return { callbacks, appointments };
+      dashboard: permissionProcedure("enquiries").query(async ({ ctx }) => {
+        if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) return { callbacks: [], appointments: [] };
+        const [callbacks, appointments] = await Promise.all([listCrmCallbacks(ctx.supabaseAccessToken, 1, 100), listCrmAppointments(ctx.supabaseAccessToken, 1, 100)]);
+        return { callbacks: callbacks.items, appointments: appointments.items };
       }),
-      updateCallback: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "scheduled", "completed", "cancelled"]), assignedTo: z.number().int().positive().optional(), notes: z.string().max(1000).optional() })).mutation(({ input }) => updateCallbackRequest(input)),
-      updateAppointment: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "confirmed", "completed", "cancelled", "no_show"]), assignedTo: z.number().int().positive().optional(), meetingLink: z.string().url().optional().or(z.literal("")), notes: z.string().max(1000).optional() })).mutation(({ input }) => updateAppointment(input)),
+      updateCallback: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "pending", "assigned", "in_progress", "scheduled", "completed", "cancelled"]), assignedTo: z.number().int().positive().optional(), notes: z.string().max(5000).optional() })).mutation(({ ctx, input }) => {
+        if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) throw new TRPCError({ code: "FORBIDDEN", message: "CRM access is required." });
+        return updateCrmCallback(ctx.supabaseAccessToken, { id: input.id, status: input.status, notes: input.notes ?? null });
+      }),
+      updateAppointment: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "confirmed", "rescheduled", "completed", "cancelled", "no_show"]), assignedTo: z.number().int().positive().optional(), meetingLink: z.string().url().optional().or(z.literal("")), notes: z.string().max(5000).optional() })).mutation(({ ctx, input }) => {
+        if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) throw new TRPCError({ code: "FORBIDDEN", message: "CRM access is required." });
+        return updateCrmAppointment(ctx.supabaseAccessToken, { id: input.id, status: input.status, meetingLink: input.meetingLink || null, notes: input.notes ?? null });
+      }),
     }),
   }),
 });

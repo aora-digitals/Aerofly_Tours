@@ -1,1 +1,0 @@
-ALTER TABLE `payments` ADD `settlementCurrency` varchar(3) DEFAULT 'INR' NOT NULL;

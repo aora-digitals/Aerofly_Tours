@@ -1,2 +1,0 @@
-ALTER TABLE `quotations` ADD `bookingId` int;--> statement-breakpoint
-ALTER TABLE `quotations` ADD CONSTRAINT `quotations_bookingId_bookings_id_fk` FOREIGN KEY (`bookingId`) REFERENCES `bookings`(`id`) ON DELETE no action ON UPDATE no action;

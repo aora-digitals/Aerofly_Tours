@@ -1,13 +1,23 @@
 import type { CreateExpressContextOptions } from "@trpc/server/adapters/express";
-import type { User } from "../../drizzle/schema";
 import * as db from "../db";
 import { authenticateSupabaseRequest } from "./supabase";
 import { sdk } from "./sdk";
 
+export type LegacyUser = {
+  id: number;
+  openId: string;
+  name: string | null;
+  email: string | null;
+  loginMethod: string | null;
+  role: string;
+  lastSignedIn: Date | null;
+};
+
 export type TrpcContext = {
   req: CreateExpressContextOptions["req"];
   res: CreateExpressContextOptions["res"];
-  user: User | null;
+  user: LegacyUser | null;
+  supabaseAccessToken: string | null;
 };
 
 type LegacyRole =
@@ -53,7 +63,7 @@ function mapSupabaseRoleToLegacyRole(
 
 async function resolveSupabaseLegacyUser(
   auth: Awaited<ReturnType<typeof authenticateSupabaseRequest>>
-): Promise<User | null> {
+): Promise<LegacyUser | null> {
   if (!auth) {
     return null;
   }
@@ -119,6 +129,7 @@ export async function createContext(
           req: opts.req,
           res: opts.res,
           user,
+          supabaseAccessToken: supabaseAuth.accessToken,
         };
       }
     } catch (error) {
@@ -131,7 +142,7 @@ export async function createContext(
     }
   }
 
-  let user: User | null = null;
+  let user: LegacyUser | null = null;
 
   try {
     user = await sdk.authenticateRequest(opts.req);
@@ -143,5 +154,6 @@ export async function createContext(
     req: opts.req,
     res: opts.res,
     user,
+    supabaseAccessToken: null,
   };
 }

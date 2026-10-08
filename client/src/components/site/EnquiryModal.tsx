@@ -1,13 +1,17 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check, Loader2, X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { recordCustomerActivity } from "@/lib/customer";
 
 type Props = { open: boolean; onClose: () => void; tour?: { id?: number; title?: string; destination?: string } };
 export default function EnquiryModal({ open, onClose, tour }: Props) {
   const [sent, setSent] = useState(false);
+  const { user } = useAuth();
   const [form, setForm] = useState({ name: "", email: "", phone: "", travelDates: "", travellers: "2", budget: "", message: "" });
-  const mutation = trpc.enquiries.create.useMutation({ onSuccess: () => { setSent(true); toast.success("Your enquiry has been received"); }, onError: (error) => toast.error(error.message) });
+  const mutation = trpc.enquiries.create.useMutation({ onSuccess: () => { setSent(true); if (user?.id) void recordCustomerActivity(user.id, "enquiry_submitted", "enquiry").catch(() => undefined); toast.success("Your enquiry has been received"); }, onError: (error) => toast.error(error.message) });
+  useEffect(() => { if (open && user?.id) void recordCustomerActivity(user.id, "enquiry_started", tour?.id ? "tour" : null, tour?.id ?? null).catch(() => undefined); }, [open, user?.id, tour?.id]);
   if (!open) return null;
   const update = (key: keyof typeof form, value: string) => setForm((current) => ({ ...current, [key]: value }));
   const submit = (event: React.FormEvent) => { event.preventDefault(); mutation.mutate({ ...form, tourId: tour?.id, destination: tour?.destination, travellers: Number(form.travellers) }); };

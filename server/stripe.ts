@@ -1,7 +1,7 @@
 import Stripe from "stripe";
 import { ENV } from "./_core/env";
-import { createPendingStripePayment, getCustomerQuotation, getPaymentById, markPaymentRefunded, reconcileStripePayment } from "./db";
-import type { User } from "../drizzle/schema";
+import { createPendingStripePayment, getCustomerQuotation, getPaymentById, markPaymentRefunded, reconcileStripePayment } from "./db.ts";
+import type { User } from "./db.ts";
 import { BASE_CURRENCY, convertFromInr, getCurrencyRate, getMinorUnitAmount, STRIPE_SUPPORTED_CURRENCIES, type CurrencyCode } from "./currency";
 
 function getStripe() {
