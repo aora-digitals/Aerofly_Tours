@@ -67,6 +67,28 @@ export async function getUserByOpenId(openId: string) {
   return rows[0];
 }
 
+export async function getUserByEmail(email: string) {
+  const db = await getDb();
+
+  if (!db) {
+    return undefined;
+  }
+
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    return undefined;
+  }
+
+  const rows = await db
+    .select()
+    .from(users)
+    .where(eq(users.email, normalizedEmail))
+    .limit(1);
+
+  return rows[0];
+}
+
 export async function listTeamMembers() {
   const db = await getDb();
   if (!db) return [];
@@ -83,6 +105,7 @@ export async function updateTeamMemberRole(id: number, role: "user" | "owner" | 
 }
 
 export async function listTours(input: { search?: string; kind?: "domestic" | "international"; category?: string; featured?: boolean; limit?: number } = {}) {
+  try {
   const db = await getDb();
   if (!db) return [];
   const predicates = [eq(tours.status, "published")];
@@ -123,6 +146,15 @@ export async function listTours(input: { search?: string; kind?: "domestic" | "i
     .orderBy(desc(tours.featured), desc(tours.createdAt))
     .limit(input.limit ?? 24);
   return rows;
+  } catch (error) {
+    console.error("========== LIST TOURS DB ERROR ==========");
+    console.error(error);
+    console.error("CAUSE:", (error as any)?.cause);
+    console.error("CAUSE MESSAGE:", (error as any)?.cause?.message);
+    console.error("CAUSE CODE:", (error as any)?.cause?.code);
+    console.error("==========================================");
+    throw error;
+  }
 }
 
 export async function getTourBySlug(slug: string) {
