@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowDownLeft, CircleDollarSign, FileCheck2, Loader2, Plus, ReceiptIndianRupee } from "lucide-react";
+import { CircleDollarSign, FileCheck2, Loader2, Plus, ReceiptIndianRupee } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import AdminRevenueReport from "./AdminRevenueReport";

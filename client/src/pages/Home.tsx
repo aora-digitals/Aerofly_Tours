@@ -6,7 +6,6 @@ import {
   ChevronRight,
   Compass,
   FileCheck2,
-  Headphones,
   Hotel,
   MapPinned,
   Plane,

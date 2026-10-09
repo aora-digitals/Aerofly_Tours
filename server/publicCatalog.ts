@@ -371,7 +371,6 @@ export async function getPublicHomepage() {
   ]);
 
   const all = catalogue.items;
-  const by = (predicate: (tour: any) => boolean) => all.filter(predicate).slice(0, 6);
 
   return {
     featuredTours: all.filter((tour) => tour.featured).slice(0, 6),

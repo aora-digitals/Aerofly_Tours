@@ -26,6 +26,8 @@ import Blog from "./pages/Blog";
 import BlogDetail from "./pages/BlogDetail";
 import SearchPage from "./pages/SearchPage";
 import NotFound from "./pages/NotFound";
+import CustomerOffers from "./pages/CustomerOffers";
+import AdminBookingOffer from "./pages/AdminBookingOffer";
 
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -94,6 +96,18 @@ function Router() {
           <AdminCRM />
         </ProtectedRoute>
       </Route>
+
+      <Route path="/dashboard/offers">
+  <ProtectedRoute>
+    <CustomerOffers />
+  </ProtectedRoute>
+</Route>
+
+<Route path="/admin/booking-offers/new">
+  <ProtectedRoute requiredStaff>
+    <AdminBookingOffer />
+  </ProtectedRoute>
+</Route>
 
       <Route path="/about" component={About} />
 

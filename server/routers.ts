@@ -61,6 +61,14 @@ import { createCustomerAppointment, createCustomerCallback, createCustomerEnquir
 import {
   addAppointmentNote, addCallbackNote, addEnquiryNote, assignCrmEnquiry, getCrmCustomer, getCrmDashboard, getCrmEnquiry, listCrmAppointments, listCrmCallbacks, listCrmCustomers, listCrmDepartments, listCrmEnquiries, listCrmStaff, updateCrmAppointment, updateCrmCallback, updateCrmEnquiry,
 } from "./crm";
+import {
+  issueBookingOffer,
+  listMyBookingOffers,
+  listOfferDepartures,
+  recordCrmEnquiry,
+  respondToBookingOffer,
+  reviewBookingCancellation,
+} from "./bookingOffers";
 
 const permissionProcedure = (permission: WorkspacePermission) => protectedProcedure.use(({ ctx, next }) => {
   if (!hasWorkspacePermission(ctx.user.role, permission)) throw new TRPCError({ code: "FORBIDDEN", message: `This workspace action requires the ${permission} permission` });
@@ -239,8 +247,104 @@ createCheckout: protectedProcedure
         `${ctx.req.protocol}://${ctx.req.get("host")}`,
     })
   ),
+  offers: protectedProcedure.query(({ ctx }) => {
+  if (!ctx.supabaseAccessToken) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "A Supabase session is required.",
+    });
+  }
+
+  return listMyBookingOffers(ctx.supabaseAccessToken);
+}),
+
+respondToOffer: protectedProcedure
+  .input(z.object({
+    quotationId: z.number().int().positive(),
+    action: z.enum([
+      "accept",
+      "reject",
+      "request_changes",
+      "cancel",
+    ]),
+    message: z.string().max(2000).optional(),
+  }))
+  .mutation(({ ctx, input }) => {
+    if (!ctx.supabaseAccessToken) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "A Supabase session is required.",
+      });
+    }
+
+    return respondToBookingOffer(ctx.supabaseAccessToken, input);
   }),
-  crm: router({
+  }),
+
+crm: router({
+    
+recordEnquiry: permissionProcedure("crm")
+  .input(z.object({
+    name: z.string().min(2).max(160),
+    email: z.string().email(),
+    phone: z.string().min(7).max(40),
+    destination: z.string().max(160).optional(),
+    travelDates: z.string().max(160).optional(),
+    travellers: z.number().int().min(1).max(100),
+    budget: z.string().max(120).optional(),
+    tripType: z.string().max(120).optional(),
+    message: z.string().max(2000).optional(),
+    source: z.enum([
+      "phone",
+      "office",
+      "website",
+      "callback",
+      "appointment",
+      "other",
+    ]),
+  }))
+  .mutation(({ ctx, input }) => {
+    if (!ctx.supabaseAccessToken) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "A Supabase session is required.",
+      });
+    }
+
+    return recordCrmEnquiry(ctx.supabaseAccessToken, input);
+  }),
+
+  reviewCancellation: permissionProcedure("crm")
+  .input(z.object({
+    requestId: z.number().int().positive(),
+    decision: z.enum(["approve", "reject"]),
+    response: z.string().max(2000).optional(),
+  }))
+  .mutation(({ ctx, input }) => {
+    if (!ctx.supabaseAccessToken) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "A Supabase session is required.",
+      });
+    }
+
+    return reviewBookingCancellation(
+      ctx.supabaseAccessToken,
+      input,
+    );
+  }),
+
+departures: permissionProcedure("quotes").query(({ ctx }) => {
+  if (!ctx.supabaseAccessToken) {
+    throw new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "A Supabase session is required.",
+    });
+  }
+
+  return listOfferDepartures(ctx.supabaseAccessToken);
+}),
+
     dashboard: permissionProcedure("crm").query(({ ctx }) => {
       if (!ctx.supabaseAccessToken) throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase session is required." });
       return getCrmDashboard(ctx.supabaseAccessToken);
@@ -318,6 +422,36 @@ createCheckout: protectedProcedure
     }),
     staff: permissionProcedure("crm").query(() => listCrmStaff()),
     departments: permissionProcedure("crm").query(() => listCrmDepartments()),
+    
+issueOffer: permissionProcedure("quotes")
+  .input(z.object({
+    enquiryId: z.number().int().positive(),
+    departureId: z.number().int().positive(),
+    adults: z.number().int().min(1).max(100),
+    children: z.number().int().min(0).max(100).default(0),
+    infants: z.number().int().min(0).max(100).default(0),
+    singleRooms: z.number().int().min(0).max(100).default(0),
+    discount: z.number().min(0).default(0),
+    additionalFees: z.number().min(0).default(0),
+    taxRate: z.number().min(0).max(100).default(0),
+    validUntil: z.string().datetime(),
+    inclusions: z.array(z.string().max(255)).max(50).default([]),
+    exclusions: z.array(z.string().max(255)).max(50).default([]),
+    specialConditions: z.string().max(3000).optional(),
+    paymentTerms: z.string().max(2000).optional(),
+    cancellationTerms: z.string().max(3000).optional(),
+    customerNotes: z.string().max(3000).optional(),
+  }))
+  .mutation(({ ctx, input }) => {
+    if (!ctx.supabaseAccessToken || !ctx.user) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "A valid staff session is required.",
+      });
+    }
+
+    return issueBookingOffer(ctx.supabaseAccessToken, ctx.user.id, input);
+  }),
   }),
   ai: router({
     tripPlanner: publicProcedure.input(z.object({

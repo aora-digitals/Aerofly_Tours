@@ -1,4 +1,4 @@
-import { ArrowRight, Check, ChevronLeft, ChevronRight, Clock3, MapPin, Play, Sparkles } from "lucide-react";
+import { ArrowRight, Check, ChevronLeft, ChevronRight, Clock3, Play, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Link } from "wouter";
 const sampleTrip = [{ day: "01", place: "Dubai Marina", title: "Arrive into the city of light", copy: "A gentle first day: check in, settle into the rhythm and watch the skyline turn gold.", tags: ["Airport pickup", "Marina walk"] }, { day: "02", place: "Old Dubai", title: "The city behind the glass", copy: "Abra rides, spice lanes and a slower look at the stories underneath the skyline.", tags: ["Al Fahidi", "Creek cruise"] }, { day: "03", place: "Downtown", title: "The big Dubai moments", copy: "Go high, go wide, then leave space for a long lunch and an evening with no schedule.", tags: ["Burj Khalifa", "Fountain show"] }, { day: "04", place: "Desert edge", title: "A little room to breathe", copy: "Leave the city behind for warm dunes, a sunset drive and a dinner under the stars.", tags: ["Desert safari", "Private dinner"] }];

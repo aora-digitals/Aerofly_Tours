@@ -73,18 +73,6 @@ export function createServerSupabaseClient(accessToken?: string) {
   });
 }
 
-function isSupportedRole(value: unknown): value is SupabaseAppRole {
-  return (
-    value === "customer" ||
-    value === "owner" ||
-    value === "admin" ||
-    value === "manager" ||
-    value === "marketing" ||
-    value === "customer_care" ||
-    value === "staff" ||
-    value === "counsellor"
-  );
-}
 
 async function loadProfile(
   accessToken: string,

@@ -1,4 +1,4 @@
-import { ArrowRight, Bot, Loader2, Send, Sparkles } from "lucide-react";
+import { ArrowRight, Bot, Loader2, Send} from "lucide-react";
 import { FormEvent, useState } from "react";
 import { Link } from "wouter";
 import { Streamdown } from "streamdown";

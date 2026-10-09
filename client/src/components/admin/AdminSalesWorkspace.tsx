@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ArrowRight, BadgeCheck, FilePlus2, Loader2, Send, ShoppingBag, XCircle } from "lucide-react";
+import {  BadgeCheck, FilePlus2, Loader2, Send, ShoppingBag, XCircle } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 

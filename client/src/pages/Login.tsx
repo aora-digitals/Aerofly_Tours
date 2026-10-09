@@ -34,7 +34,6 @@ export default function Login() {
   const [, setLocation] = useLocation();
 
   const {
-    user,
     loading,
     isAuthenticated,
     signIn,

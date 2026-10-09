@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CalendarDays, Check, Clock3, Loader2, MessageCircle, Phone, Video, X } from "lucide-react";
+import { CalendarDays, Check, Clock3, Loader2,Phone,X } from "lucide-react";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
