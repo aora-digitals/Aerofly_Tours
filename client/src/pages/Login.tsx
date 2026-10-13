@@ -13,12 +13,15 @@ import { toast } from "sonner";
 import Footer from "@/components/site/Footer";
 import Header from "@/components/site/Header";
 import { useAuth } from "@/_core/hooks/useAuth";
+import { initialAuthCallbackUrl, supabase } from "@/lib/supabase";
+import { defaultLandingPath, isSafeInternalPath } from "@/lib/workspaceAccess";
 
 type AuthMode =
   | "signin"
   | "signup"
   | "forgot"
-  | "reset";
+  | "reset"
+  | "invite";
 
 function getSearchParams() {
   if (typeof window === "undefined") {
@@ -36,6 +39,8 @@ export default function Login() {
   const {
     loading,
     isAuthenticated,
+    session,
+    user,
     signIn,
     signUp,
     resetPassword,
@@ -49,10 +54,12 @@ export default function Login() {
 
   const requestedReset =
     params.get("mode") === "reset";
+  const requestedInvite =
+    params.get("mode") === "invite";
 
   const [mode, setMode] =
     useState<AuthMode>(
-      requestedReset ? "reset" : "signin"
+      requestedReset ? "reset" : requestedInvite ? "invite" : "signin"
     );
 
   const [fullName, setFullName] =
@@ -70,41 +77,193 @@ export default function Login() {
   const [submitting, setSubmitting] =
     useState(false);
 
+  const [inviteCallbackState, setInviteCallbackState] =
+    useState<"checking" | "ready" | "failed">(
+      requestedInvite ? "checking" : "ready"
+    );
+
   const [message, setMessage] =
     useState<string | null>(null);
 
-  const nextPath =
-    params.get("next") || "/dashboard";
+  const requestedNextPath = params.get("next");
+  // Invitation links retain their assigned workspace destination. Ordinary
+  // sign-ins default to the landing page for the authenticated database role.
+  const nextPath = isSafeInternalPath(requestedNextPath)
+    ? requestedNextPath
+    : "/dashboard";
 
   useEffect(() => {
-    if (
-      requestedReset &&
-      isAuthenticated
-    ) {
-      setMode("reset");
-    }
-  }, [
-    requestedReset,
-    isAuthenticated,
-  ]);
+    if (requestedReset && isAuthenticated) setMode("reset");
+    if (requestedInvite) setMode("invite");
+  }, [requestedReset, requestedInvite, isAuthenticated]);
+
+  // Supabase invitations may arrive as a token hash (implicit callback),
+  // a token_hash query parameter, or a PKCE code. Process the callback before
+  // deciding that the invitation is invalid. Keep flowType: "pkce" unchanged.
+  useEffect(() => {
+    if (!requestedInvite) return;
+
+    let cancelled = false;
+
+    const processInviteCallback = async () => {
+      setInviteCallbackState("checking");
+
+      try {
+        const liveUrl = new URL(window.location.href);
+        const originalUrl = initialAuthCallbackUrl
+          ? new URL(initialAuthCallbackUrl)
+          : liveUrl;
+        const hasLiveCallback = Boolean(
+          liveUrl.searchParams.get("token_hash") ||
+          liveUrl.searchParams.get("code") ||
+          liveUrl.hash.includes("access_token=") ||
+          liveUrl.hash.includes("error=")
+        );
+        // Supabase may remove callback tokens from the address bar after it
+        // consumes them. Use the URL captured before client initialization only
+        // when it belongs to this same invitation page and the live URL is clean.
+        const callbackUrl = !hasLiveCallback &&
+          originalUrl.pathname === liveUrl.pathname &&
+          originalUrl.searchParams.get("mode") === "invite"
+            ? originalUrl
+            : liveUrl;
+        const hashParams = new URLSearchParams(
+          callbackUrl.hash.startsWith("#")
+            ? callbackUrl.hash.slice(1)
+            : callbackUrl.hash
+        );
+        const tokenHash = callbackUrl.searchParams.get("token_hash");
+        const callbackType = callbackUrl.searchParams.get("type") || hashParams.get("type");
+        const accessToken = hashParams.get("access_token");
+        const refreshToken = hashParams.get("refresh_token");
+        const code = callbackUrl.searchParams.get("code");
+        const callbackError =
+          hashParams.get("error_description") ||
+          callbackUrl.searchParams.get("error_description") ||
+          hashParams.get("error_code") ||
+          callbackUrl.searchParams.get("error_code");
+
+        if (callbackError) {
+          throw new Error(callbackError.replace(/\+/g, " "));
+        }
+
+        let callbackSucceeded = false;
+
+        if (tokenHash && (!callbackType || callbackType === "invite")) {
+          const { error } = await supabase.auth.verifyOtp({
+            token_hash: tokenHash,
+            type: "invite",
+          });
+          if (error) throw error;
+          callbackSucceeded = true;
+        } else if (accessToken && refreshToken) {
+          const { data: current } = await supabase.auth.getSession();
+          let callbackUserId: string | null = null;
+          try {
+            const payload = accessToken.split(".")[1];
+            const normalized = payload.replace(/-/g, "+").replace(/_/g, "/");
+            const claims = JSON.parse(atob(normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=")));
+            callbackUserId = typeof claims.sub === "string" ? claims.sub : null;
+          } catch {
+            // Supabase setSession below will report malformed credentials.
+          }
+
+          if (current.session?.user?.id && callbackUserId === current.session.user.id) {
+            callbackSucceeded = true;
+          } else {
+            const { error } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (error) throw error;
+            callbackSucceeded = true;
+          }
+        } else if (code) {
+          const { data: current } = await supabase.auth.getSession();
+          if (current.session) {
+            callbackSucceeded = true;
+          } else {
+            const { error } = await supabase.auth.exchangeCodeForSession(code);
+            if (error) throw error;
+            callbackSucceeded = true;
+          }
+        } else {
+          // The Supabase client may already have consumed the callback during
+          // initialization, so check its session before declaring failure.
+          const { data, error } = await supabase.auth.getSession();
+          if (error) throw error;
+          callbackSucceeded = Boolean(data.session?.user);
+        }
+
+        const { data: finalSession, error: finalSessionError } =
+          await supabase.auth.getSession();
+        if (finalSessionError) throw finalSessionError;
+        callbackSucceeded = callbackSucceeded && Boolean(finalSession.session?.user);
+
+        // Remove bearer credentials / one-time codes from the address bar after
+        // processing, while preserving mode and the internal destination.
+        if (callbackUrl.hash || tokenHash || code) {
+          callbackUrl.hash = "";
+          callbackUrl.searchParams.delete("token_hash");
+          callbackUrl.searchParams.delete("code");
+          callbackUrl.searchParams.delete("type");
+          callbackUrl.searchParams.delete("error");
+          callbackUrl.searchParams.delete("error_code");
+          callbackUrl.searchParams.delete("error_description");
+          window.history.replaceState(
+            window.history.state,
+            "",
+            `${callbackUrl.pathname}${callbackUrl.search}`
+          );
+        }
+
+        if (!cancelled) {
+          setInviteCallbackState(callbackSucceeded ? "ready" : "failed");
+        }
+      } catch (callbackError) {
+        console.error("[Auth] Employee invitation callback failed:", callbackError);
+        if (!cancelled) setInviteCallbackState("failed");
+      }
+    };
+
+    void processInviteCallback();
+    return () => {
+      cancelled = true;
+    };
+  }, [requestedInvite]);
 
   useEffect(() => {
     if (
       loading ||
       !isAuthenticated ||
-      mode === "reset"
+      mode === "reset" ||
+      mode === "invite"
     ) {
       return;
     }
 
     if (mode === "signin") {
-      setLocation(nextPath);
+      const roles = user?.roles?.length
+        ? user.roles
+        : user?.role
+          ? [user.role]
+          : [];
+      const isOrganizationMember = roles.some((role) => role !== "customer");
+      const requestedCustomerPath = requestedNextPath === "/dashboard" ||
+        Boolean(requestedNextPath?.startsWith("/dashboard/"));
+      const destination = isSafeInternalPath(requestedNextPath) &&
+        !(isOrganizationMember && requestedCustomerPath)
+          ? requestedNextPath
+          : defaultLandingPath(user);
+      setLocation(destination);
     }
   }, [
     loading,
     isAuthenticated,
+    session,
     mode,
-    nextPath,
+    requestedNextPath,
+    user,
     setLocation,
   ]);
 
@@ -149,8 +308,9 @@ export default function Login() {
       toast.success(
         "Welcome back to AeroFly."
       );
-
-      setLocation(nextPath);
+      // AuthContext hydrates the database-assigned role asynchronously.
+      // The authenticated redirect effect navigates after that hydration,
+      // avoiding a race to the customer dashboard.
     } finally {
       setSubmitting(false);
     }
@@ -362,7 +522,7 @@ export default function Login() {
               </div>
 
               <div className="eyebrow mt-7">
-                AeroFly customer area
+                {mode === "invite" ? "AeroFly employee onboarding" : "AeroFly customer area"}
               </div>
 
               <h1 className="mt-3 font-['Manrope'] text-3xl font-extrabold tracking-[-.05em]">
@@ -578,7 +738,17 @@ export default function Login() {
               </form>
             )}
 
-            {mode === "reset" && (
+            {mode === "invite" && (inviteCallbackState === "checking" || loading) && (
+              <div className="mt-7 text-center text-sm text-[#6f6c66]">Verifying your invitation…</div>
+            )}
+
+            {mode === "invite" && inviteCallbackState === "failed" && !loading && (
+              <div className="mt-7 rounded-xl border border-[#f0d2c2] bg-[#fff7f2] p-4 text-sm leading-6 text-[#8b3c1b]">
+                We could not verify this invitation. It may have expired or already been used. Ask your AeroFly administrator to send a fresh invitation, then open the newest email link.
+              </div>
+            )}
+
+            {(mode === "reset" && isAuthenticated || mode === "invite" && inviteCallbackState === "ready" && Boolean(session?.user)) && (
               <form
                 onSubmit={handleUpdatePassword}
                 className="mt-7 space-y-4"
@@ -623,8 +793,8 @@ export default function Login() {
                   className="btn btn-primary mt-2 w-full"
                 >
                   {submitting
-                    ? "Updating…"
-                    : "Update password"}
+                    ? "Saving password…"
+                    : mode === "invite" ? "Set password and continue" : "Update password"}
 
                   {!submitting && (
                     <ArrowRight size={15} />
@@ -633,7 +803,7 @@ export default function Login() {
               </form>
             )}
 
-            {mode !== "reset" && (
+            {mode !== "reset" && mode !== "invite" && (
               <div className="mt-7 flex items-center gap-3 text-[11px] text-[#a29d95]">
                 <span className="h-px flex-1 bg-[#e8e4dd]" />
                 Secure sign-in
@@ -641,7 +811,7 @@ export default function Login() {
               </div>
             )}
 
-            {mode !== "reset" && (
+            {mode !== "reset" && mode !== "invite" && (
               <div className="mt-6 text-center">
                 {mode === "signin" ? (
                   <p className="text-[11px] text-[#908b83]">

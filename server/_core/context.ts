@@ -11,6 +11,8 @@ export type LegacyUser = {
   loginMethod: string | null;
   role: string;
   lastSignedIn: Date | null;
+  createdAt: Date | null;
+  updatedAt: Date | null;
 };
 
 export type TrpcContext = {
@@ -24,6 +26,11 @@ type LegacyRole =
   | "user"
   | "owner"
   | "manager"
+  | "department_manager"
+  | "finance"
+  | "sales"
+  | "operations"
+  | "support"
   | "marketing"
   | "customer_care"
   | "staff"
@@ -42,6 +49,21 @@ function mapSupabaseRoleToLegacyRole(
 
     case "manager":
       return "manager";
+
+    case "department_manager":
+      return "department_manager";
+
+    case "finance":
+      return "finance";
+
+    case "sales":
+      return "sales";
+
+    case "operations":
+      return "operations";
+
+    case "support":
+      return "support";
 
     case "marketing":
       return "marketing";
@@ -147,7 +169,7 @@ export async function createContext(
   try {
     user = await sdk.authenticateRequest(opts.req);
   } catch {
-    user = null;
+    // user = null;
   }
 
   return {

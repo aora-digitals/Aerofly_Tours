@@ -5,7 +5,8 @@ import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
 import { protectedProcedure, publicProcedure, router } from "./_core/trpc";
 import { invokeLLM } from "./_core/llm";
-import { ASSIGNABLE_ROLES, hasWorkspacePermission, type WorkspacePermission } from "@shared/types";
+import { ASSIGNABLE_ROLES, type WorkspacePermission } from "@shared/types";
+import { hasDatabaseWorkspacePermission, hasDatabasePermission, hasGlobalDatabasePermission } from "./_core/workspaceAuthorization";
 import {
   createAppointment,
   createCallbackRequest,
@@ -40,7 +41,6 @@ import {
   createQuotation,
   recordPayment,
   updateQuotationStatus,
-  updateTeamMemberRole,
   updateDestinationRecord,
   updateTourRecord,
 } from "./db";
@@ -70,8 +70,14 @@ import {
   reviewBookingCancellation,
 } from "./bookingOffers";
 
-const permissionProcedure = (permission: WorkspacePermission) => protectedProcedure.use(({ ctx, next }) => {
-  if (!hasWorkspacePermission(ctx.user.role, permission)) throw new TRPCError({ code: "FORBIDDEN", message: `This workspace action requires the ${permission} permission` });
+const permissionProcedure = (permission: WorkspacePermission) => protectedProcedure.use(async ({ ctx, next }) => {
+  if (!ctx.supabaseAccessToken) {
+    throw new TRPCError({ code: "UNAUTHORIZED", message: "A Supabase-authenticated session is required." });
+  }
+  const allowed = await hasDatabaseWorkspacePermission(ctx.supabaseAccessToken, permission);
+  if (!allowed) {
+    throw new TRPCError({ code: "FORBIDDEN", message: `This action requires the database permission for ${permission}.` });
+  }
   return next({ ctx });
 });
 
@@ -442,14 +448,13 @@ issueOffer: permissionProcedure("quotes")
     cancellationTerms: z.string().max(3000).optional(),
     customerNotes: z.string().max(3000).optional(),
   }))
-  .mutation(({ ctx, input }) => {
+  .mutation(async ({ ctx, input }) => {
     if (!ctx.supabaseAccessToken || !ctx.user) {
-      throw new TRPCError({
-        code: "UNAUTHORIZED",
-        message: "A valid staff session is required.",
-      });
+      throw new TRPCError({ code: "UNAUTHORIZED", message: "A valid staff session is required." });
     }
-
+    if (!(await hasDatabasePermission(ctx.supabaseAccessToken, ["bookings.manage"]))) {
+      throw new TRPCError({ code: "FORBIDDEN", message: "Issuing a booking proposal requires bookings.manage." });
+    }
     return issueBookingOffer(ctx.supabaseAccessToken, ctx.user.id, input);
   }),
   }),
@@ -480,8 +485,11 @@ issueOffer: permissionProcedure("quotes")
   }),
   admin: router({
     overview: permissionProcedure("overview").query(async ({ ctx }) => {
+      if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["admin.dashboard.read"]))) {
+        throw new TRPCError({ code: "FORBIDDEN", message: "Use the organization-scoped ERP dashboard for this role." });
+      }
       const stats = await getAdminStats();
-      if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) {
+      if (!ctx.supabaseAccessToken || !(await hasDatabaseWorkspacePermission(ctx.supabaseAccessToken, "crm"))) {
         return { stats: { ...stats, enquiries: 0, newEnquiries: 0 }, enquiries: [] };
       }
       const pipeline = await listCrmEnquiries(ctx.supabaseAccessToken, { page: 1, pageSize: 8 });
@@ -495,50 +503,95 @@ issueOffer: permissionProcedure("quotes")
         const [tours, destinations, categories] = await Promise.all([listAdminTours(), listAdminDestinations(), listCategories()]);
         return { tours, destinations, categories };
       }),
-      createTour: permissionProcedure("catalogue").input(tourInput).mutation(({ input }) => createTourRecord(input)),
-      updateTour: permissionProcedure("catalogue").input(tourInput.extend({ id: z.number().int().positive() })).mutation(({ input }) => updateTourRecord(input)),
-      deleteTour: permissionProcedure("catalogue").input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteTourRecord(input.id)),
-      createDestination: permissionProcedure("catalogue").input(destinationInput).mutation(({ input }) => createDestinationRecord(input)),
-      updateDestination: permissionProcedure("catalogue").input(destinationInput.extend({ id: z.number().int().positive() })).mutation(({ input }) => updateDestinationRecord(input)),
-      deleteDestination: permissionProcedure("catalogue").input(z.object({ id: z.number().int().positive() })).mutation(({ input }) => deleteDestinationRecord(input.id)),
+      createTour: permissionProcedure("catalogue").input(tourInput).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["tours.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "This legacy catalogue mutation is restricted to globally authorized administrators." });
+        return createTourRecord(input);
+      }),
+      updateTour: permissionProcedure("catalogue").input(tourInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["tours.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "This legacy catalogue mutation is restricted to globally authorized administrators." });
+        return updateTourRecord(input);
+      }),
+      deleteTour: permissionProcedure("catalogue").input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["tours.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "This legacy catalogue mutation is restricted to globally authorized administrators." });
+        return deleteTourRecord(input.id);
+      }),
+      createDestination: permissionProcedure("catalogue").input(destinationInput).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["tours.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "This legacy catalogue mutation is restricted to globally authorized administrators." });
+        return createDestinationRecord(input);
+      }),
+      updateDestination: permissionProcedure("catalogue").input(destinationInput.extend({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["tours.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "This legacy catalogue mutation is restricted to globally authorized administrators." });
+        return updateDestinationRecord(input);
+      }),
+      deleteDestination: permissionProcedure("catalogue").input(z.object({ id: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["tours.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "This legacy catalogue mutation is restricted to globally authorized administrators." });
+        return deleteDestinationRecord(input.id);
+      }),
     }),
     team: router({
-      list: permissionProcedure("team").query(() => listTeamMembers()),
-      updateRole: permissionProcedure("team").input(z.object({ id: z.number().int().positive(), role: z.enum(ASSIGNABLE_ROLES) })).mutation(({ ctx, input }) => {
-        if (ctx.user.id === input.id && input.role !== "owner") throw new TRPCError({ code: "BAD_REQUEST", message: "You cannot remove your own owner access" });
-        return updateTeamMemberRole(input.id, input.role);
+      list: permissionProcedure("team").query(async ({ ctx }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["employees.read"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Use organization-scoped employee management for this role." });
+        return listTeamMembers();
+      }),
+      updateRole: permissionProcedure("team").input(z.object({ id: z.number().int().positive(), role: z.enum(ASSIGNABLE_ROLES) })).mutation(async ({ ctx }) => {
+        if (!(await hasDatabasePermission(ctx.supabaseAccessToken, ["roles.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Role assignment requires roles.manage." });
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: "Legacy role changes are disabled. Assign Supabase Auth roles through the audited admin-organization Edge Function." });
       }),
     }),
     sales: router({
-      dashboard: permissionProcedure("quotes").query(async () => {
+      dashboard: permissionProcedure("quotes").query(async ({ ctx }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["bookings.read"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Use the RLS-scoped Sales workspace for this role." });
         const [quotations, bookings] = await Promise.all([listSalesQuotations(), listSalesBookings()]);
         return { quotations, bookings };
       }),
-      createQuotation: permissionProcedure("quotes").input(quotationInput).mutation(({ ctx, input }) => createQuotation({ ...input, createdBy: ctx.user.id })),
-      updateQuotationStatus: permissionProcedure("quotes").input(z.object({ id: z.number().int().positive(), status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired"]) })).mutation(({ input }) => updateQuotationStatus(input.id, input.status)),
-      convertToBooking: permissionProcedure("bookings").input(z.object({ quotationId: z.number().int().positive() })).mutation(({ input }) => convertQuotationToBooking(input.quotationId)),
+      createQuotation: permissionProcedure("quotes").input(quotationInput).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["bookings.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Use the scoped staff-issued booking proposal flow for this role." });
+        return createQuotation({ ...input, createdBy: ctx.user.id });
+      }),
+      updateQuotationStatus: permissionProcedure("quotes").input(z.object({ id: z.number().int().positive(), status: z.enum(["draft", "sent", "viewed", "accepted", "rejected", "expired"]) })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["bookings.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Use the scoped staff-issued booking proposal flow for this role." });
+        return updateQuotationStatus(input.id, input.status);
+      }),
+      convertToBooking: permissionProcedure("bookings").input(z.object({ quotationId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["bookings.manage"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Use the scoped staff-issued booking proposal flow for this role." });
+        return convertQuotationToBooking(input.quotationId);
+      }),
     }),
     finance: router({
-      dashboard: permissionProcedure("finance").query(async () => {
+      dashboard: permissionProcedure("finance").query(async ({ ctx }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["finance.read"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Use the RLS-scoped Finance workspace for this role." });
         const [summary, payments, transactions] = await Promise.all([getFinanceSummary(), listFinancePayments(), listFinanceTransactions()]);
         return { summary, payments, transactions };
       }),
-      monthlyStripeRevenue: permissionProcedure("finance").input(z.object({ year: z.number().int().min(2020).max(2200), month: z.number().int().min(1).max(12) })).query(({ input }) => getMonthlyStripeRevenue(input.year, input.month)),
-      recordPayment: permissionProcedure("finance").input(paymentInput).mutation(({ ctx, input }) => recordPayment({ ...input, receivedBy: ctx.user.id })),
-      refundPayment: permissionProcedure("finance").input(z.object({ paymentId: z.number().int().positive() })).mutation(({ input }) => refundCustomerPayment(input.paymentId)),
+      monthlyStripeRevenue: permissionProcedure("finance").input(z.object({ year: z.number().int().min(2020).max(2200), month: z.number().int().min(1).max(12) })).query(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["finance.read"]))) throw new TRPCError({ code: "FORBIDDEN", message: "Monthly global revenue is restricted to globally authorized finance administrators." });
+        return getMonthlyStripeRevenue(input.year, input.month);
+      }),
+      recordPayment: permissionProcedure("finance").input(paymentInput).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["finance.manage"]))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "This legacy global payment write is disabled for organization-scoped staff. Use the audited Phase 6 payment workflow." });
+        }
+        return recordPayment({ ...input, receivedBy: ctx.user.id });
+      }),
+      refundPayment: permissionProcedure("finance").input(z.object({ paymentId: z.number().int().positive() })).mutation(async ({ ctx, input }) => {
+        if (!(await hasGlobalDatabasePermission(ctx.supabaseAccessToken, ["refunds.manage"]))) {
+          throw new TRPCError({ code: "FORBIDDEN", message: "This legacy global refund operation is disabled for organization-scoped staff. Use the audited Phase 6 refund workflow." });
+        }
+        return refundCustomerPayment(input.paymentId);
+      }),
     }),
     support: router({
       dashboard: permissionProcedure("enquiries").query(async ({ ctx }) => {
-        if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) return { callbacks: [], appointments: [] };
+        if (!ctx.supabaseAccessToken || !(await hasDatabaseWorkspacePermission(ctx.supabaseAccessToken, "crm"))) return { callbacks: [], appointments: [] };
         const [callbacks, appointments] = await Promise.all([listCrmCallbacks(ctx.supabaseAccessToken, 1, 100), listCrmAppointments(ctx.supabaseAccessToken, 1, 100)]);
         return { callbacks: callbacks.items, appointments: appointments.items };
       }),
-      updateCallback: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "pending", "assigned", "in_progress", "scheduled", "completed", "cancelled"]), assignedTo: z.number().int().positive().optional(), notes: z.string().max(5000).optional() })).mutation(({ ctx, input }) => {
-        if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) throw new TRPCError({ code: "FORBIDDEN", message: "CRM access is required." });
+      updateCallback: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "pending", "assigned", "in_progress", "scheduled", "completed", "cancelled"]), assignedTo: z.number().int().positive().optional(), notes: z.string().max(5000).optional() })).mutation(async ({ ctx, input }) => {
+        if (!ctx.supabaseAccessToken || !(await hasDatabaseWorkspacePermission(ctx.supabaseAccessToken, "crm"))) throw new TRPCError({ code: "FORBIDDEN", message: "CRM access is required." });
         return updateCrmCallback(ctx.supabaseAccessToken, { id: input.id, status: input.status, notes: input.notes ?? null });
       }),
-      updateAppointment: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "confirmed", "rescheduled", "completed", "cancelled", "no_show"]), assignedTo: z.number().int().positive().optional(), meetingLink: z.string().url().optional().or(z.literal("")), notes: z.string().max(5000).optional() })).mutation(({ ctx, input }) => {
-        if (!ctx.supabaseAccessToken || !hasWorkspacePermission(ctx.user.role, "crm")) throw new TRPCError({ code: "FORBIDDEN", message: "CRM access is required." });
+      updateAppointment: permissionProcedure("enquiries").input(z.object({ id: z.number().int().positive(), status: z.enum(["requested", "confirmed", "rescheduled", "completed", "cancelled", "no_show"]), assignedTo: z.number().int().positive().optional(), meetingLink: z.string().url().optional().or(z.literal("")), notes: z.string().max(5000).optional() })).mutation(async ({ ctx, input }) => {
+        if (!ctx.supabaseAccessToken || !(await hasDatabaseWorkspacePermission(ctx.supabaseAccessToken, "crm"))) throw new TRPCError({ code: "FORBIDDEN", message: "CRM access is required." });
         return updateCrmAppointment(ctx.supabaseAccessToken, { id: input.id, status: input.status, meetingLink: input.meetingLink || null, notes: input.notes ?? null });
       }),
     }),

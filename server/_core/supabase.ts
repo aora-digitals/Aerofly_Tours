@@ -10,6 +10,11 @@ export type SupabaseAppRole =
   | "owner"
   | "admin"
   | "manager"
+  | "department_manager"
+  | "finance"
+  | "sales"
+  | "operations"
+  | "support"
   | "marketing"
   | "customer_care"
   | "staff"
@@ -149,7 +154,12 @@ async function loadRole(
   const priority: SupabaseAppRole[] = [
     "owner",
     "admin",
+    "department_manager",
     "manager",
+    "finance",
+    "sales",
+    "operations",
+    "support",
     "marketing",
     "customer_care",
     "counsellor",

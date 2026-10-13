@@ -42,6 +42,32 @@ alter table public.quotations
   add column if not exists issued_at timestamptz,
   add column if not exists withdrawn_at timestamptz;
 
+
+-- Phase 5 prerequisite columns must exist before policies and functions
+-- reference them. The same columns are added later in the migration;
+-- IF NOT EXISTS makes that later statement safe.
+
+alter table public.quotations
+  add column if not exists customer_auth_id uuid
+    references public.profiles(id) on delete set null,
+  add column if not exists booking_details jsonb
+    not null default '{}'::jsonb,
+  add column if not exists customer_response text
+    not null default 'awaiting_response',
+  add column if not exists customer_response_note text,
+  add column if not exists response_at timestamptz,
+  add column if not exists offer_version integer
+    not null default 1;
+
+alter table public.bookings
+  add column if not exists customer_auth_id uuid
+    references public.profiles(id) on delete set null,
+  add column if not exists booking_details jsonb
+    not null default '{}'::jsonb,
+  add column if not exists cancellation_requested_at timestamptz,
+  add column if not exists cancellation_reason text;
+
+
 alter table public.quotations
   drop constraint if exists quotations_phase5_proposal_status_check;
 

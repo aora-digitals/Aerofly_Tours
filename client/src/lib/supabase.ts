@@ -18,6 +18,13 @@ if (!supabaseAnonKey) {
 }
 
 /**
+ * Capture the original URL before Supabase's auth callback detection can
+ * exchange a PKCE code or otherwise clean the browser URL.
+ */
+export const initialAuthCallbackUrl =
+  typeof window !== "undefined" ? window.location.href : "";
+
+/**
  * Browser Supabase client.
  *
  * The anon/publishable key is safe to expose in browser code.

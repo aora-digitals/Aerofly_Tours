@@ -11,14 +11,9 @@ import type { Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabase";
 
 export type AppRole =
-  | "customer"
-  | "owner"
-  | "admin"
-  | "manager"
-  | "marketing"
-  | "customer_care"
-  | "staff"
-  | "counsellor";
+  | "customer" | "owner" | "admin" | "manager" | "department_manager"
+  | "finance" | "sales" | "operations" | "support" | "marketing"
+  | "customer_care" | "staff" | "counsellor";
 
 export type AppProfile = {
   id: string;
@@ -36,7 +31,14 @@ export type AppUser = {
   id: string;
   name: string | null;
   email: string | null;
+  /** Highest-priority role retained for legacy components. */
   role: AppRole;
+  /** All active database-assigned roles; never sourced from user metadata. */
+  roles: AppRole[];
+  /** Permission keys loaded from roles -> role_permissions -> permissions. */
+  permissions: string[];
+  /** Active organization memberships used to scope workspace reports. */
+  organizationIds: string[];
   profile: AppProfile | null;
   authUser: User;
 };
@@ -89,27 +91,15 @@ const AuthContext =
   createContext<AuthContextValue | null>(null);
 
 const ROLE_PRIORITY: AppRole[] = [
-  "owner",
-  "admin",
-  "manager",
-  "marketing",
-  "customer_care",
-  "counsellor",
-  "staff",
-  "customer",
+  "owner", "admin", "department_manager", "manager", "finance", "sales",
+  "operations", "support", "marketing", "customer_care", "counsellor", "staff", "customer",
 ];
 
 function isAppRole(value: unknown): value is AppRole {
-  return (
-    value === "customer" ||
-    value === "owner" ||
-    value === "admin" ||
-    value === "manager" ||
-    value === "marketing" ||
-    value === "customer_care" ||
-    value === "staff" ||
-    value === "counsellor"
-  );
+  return typeof value === "string" && ([
+    "customer", "owner", "admin", "manager", "department_manager", "finance",
+    "sales", "operations", "support", "marketing", "customer_care", "staff", "counsellor",
+  ] as string[]).includes(value);
 }
 
 async function loadProfile(
@@ -191,85 +181,96 @@ async function loadProfile(
   return createdProfile as unknown as AppProfile;
 }
 
-async function loadRole(
-  userId: string
-): Promise<AppRole> {
-  const { data: assignments, error } =
-    await supabase
-      .from("user_roles")
-      .select("role_id")
-      .eq("user_id", userId);
+type AuthorizationSnapshot = {
+  roles: AppRole[];
+  permissions: string[];
+  organizationIds: string[];
+};
 
-  if (error) {
-    /*
-     * A missing role should never make a normal customer unable
-     * to sign in. The database trigger gives every new user
-     * the customer role.
-     */
-    console.warn(
-      "[Auth] Unable to load role:",
-      error.message
-    );
+async function loadAuthorization(userId: string): Promise<AuthorizationSnapshot> {
+  const fallback: AuthorizationSnapshot = {
+    roles: ["customer"], permissions: [], organizationIds: [],
+  };
 
-    return "customer";
+  const [assignmentResult, membershipResult] = await Promise.all([
+    supabase.from("user_roles").select("role_id,organization_id").eq("user_id", userId),
+    supabase.from("organization_memberships").select("organization_id")
+      .eq("user_id", userId).eq("status", "active"),
+  ]);
+
+  if (assignmentResult.error) {
+    console.error("[Auth] Role assignments could not be loaded; using least privilege.", assignmentResult.error.message);
+    return fallback;
+  }
+  if (membershipResult.error) {
+    console.error("[Auth] Organization membership could not be loaded; denying staff permissions.", membershipResult.error.message);
+    return fallback;
   }
 
-  const roleIds = (assignments ?? [])
-    .map((assignment) => assignment.role_id)
-    .filter(
-      (roleId): roleId is string =>
-        typeof roleId === "string"
-    );
+  const organizationIds = Array.from(new Set((membershipResult.data ?? [])
+    .map((membership) => membership.organization_id)
+    .filter((id): id is string => typeof id === "string")));
+  const activeOrganizationSet = new Set(organizationIds);
+  const assignments = (assignmentResult.data ?? []).filter((assignment) =>
+    assignment.organization_id == null || activeOrganizationSet.has(assignment.organization_id),
+  );
+  const roleIds = Array.from(new Set(assignments.map((assignment) => assignment.role_id)
+    .filter((id): id is string => typeof id === "string")));
 
-  if (roleIds.length === 0) {
-    return "customer";
+  if (roleIds.length === 0) return { ...fallback, organizationIds };
+
+  const { data: roleRows, error: rolesError } = await supabase
+    .from("roles").select("id,key").in("id", roleIds);
+  if (rolesError) {
+    console.error("[Auth] Role definitions could not be loaded; using least privilege.", rolesError.message);
+    return { ...fallback, organizationIds };
   }
 
-  const { data: roles, error: roleError } =
-    await supabase
-      .from("roles")
-      .select("id,key")
-      .in("id", roleIds);
+  const roles = ROLE_PRIORITY.filter((candidate) =>
+    (roleRows ?? []).some((row) => row.key === candidate),
+  ).filter((candidate) => candidate === "customer" || organizationIds.length > 0);
+  const validRoleIds = (roleRows ?? []).map((row) => row.id).filter((id): id is string => typeof id === "string");
+  if (validRoleIds.length === 0) return { ...fallback, organizationIds };
 
-  if (roleError) {
-    console.warn(
-      "[Auth] Unable to load role definitions:",
-      roleError.message
-    );
-
-    return "customer";
+  const { data: rolePermissionRows, error: rolePermissionsError } = await supabase
+    .from("role_permissions").select("permission_id").in("role_id", validRoleIds);
+  if (rolePermissionsError) {
+    console.error("[Auth] Permission assignments could not be loaded; navigation is denied by default.", rolePermissionsError.message);
+    return { roles: roles.length ? roles : ["customer"], permissions: [], organizationIds };
   }
 
-  for (const role of ROLE_PRIORITY) {
-    if (
-      (roles ?? []).some(
-        (candidate) => candidate.key === role
-      )
-    ) {
-      return role;
-    }
+  const permissionIds = Array.from(new Set((rolePermissionRows ?? []).map((row) => row.permission_id)
+    .filter((id): id is string => typeof id === "string")));
+  if (permissionIds.length === 0) return { roles: roles.length ? roles : ["customer"], permissions: [], organizationIds };
+
+  const { data: permissionRows, error: permissionsError } = await supabase
+    .from("permissions").select("key").in("id", permissionIds);
+  if (permissionsError) {
+    console.error("[Auth] Permission catalogue could not be loaded; navigation is denied by default.", permissionsError.message);
+    return { roles: roles.length ? roles : ["customer"], permissions: [], organizationIds };
   }
 
-  return "customer";
+  return {
+    roles: roles.length ? roles : ["customer"],
+    permissions: Array.from(new Set((permissionRows ?? []).map((row) => row.key).filter((key): key is string => typeof key === "string"))),
+    organizationIds,
+  };
 }
 
-async function buildAppUser(
-  user: User
-): Promise<AppUser> {
-  const [profile, role] = await Promise.all([
-    loadProfile(user),
-    loadRole(user.id),
+async function buildAppUser(user: User): Promise<AppUser> {
+  const [profile, authorization] = await Promise.all([
+    loadProfile(user), loadAuthorization(user.id),
   ]);
+  const role = ROLE_PRIORITY.find((candidate) => authorization.roles.includes(candidate)) ?? "customer";
 
   return {
     id: user.id,
-    name:
-      profile?.full_name ??
-      (typeof user.user_metadata?.full_name === "string"
-        ? user.user_metadata.full_name
-        : null),
+    name: profile?.full_name ?? (typeof user.user_metadata?.full_name === "string" ? user.user_metadata.full_name : null),
     email: user.email ?? null,
     role: isAppRole(role) ? role : "customer",
+    roles: authorization.roles,
+    permissions: authorization.permissions,
+    organizationIds: authorization.organizationIds,
     profile,
     authUser: user,
   };

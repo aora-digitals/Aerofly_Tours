@@ -28,6 +28,13 @@ import SearchPage from "./pages/SearchPage";
 import NotFound from "./pages/NotFound";
 import CustomerOffers from "./pages/CustomerOffers";
 import AdminBookingOffer from "./pages/AdminBookingOffer";
+import TravelAssistance from "./pages/TravelAssistance";
+import CustomerSupport from "./pages/CustomerSupport";
+import AdminTravelSupport from "./pages/AdminTravelSupport";
+import NotificationCenter from "./pages/NotificationCenter";
+import AdminERP from "./pages/AdminERP";
+import AdminERPAdministration from "./pages/AdminERPAdministration";
+import MarketingCampaigns from "./pages/MarketingCampaigns";
 
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -65,9 +72,27 @@ function Router() {
         component={PlanMyTrip}
       />
 
+      <Route path="/dashboard/notifications">
+        <ProtectedRoute>
+          <NotificationCenter />
+        </ProtectedRoute>
+      </Route>
+
       <Route path="/dashboard">
         <ProtectedRoute>
           <CustomerDashboard />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/dashboard/travel-assistance">
+        <ProtectedRoute>
+          <TravelAssistance />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/dashboard/support">
+        <ProtectedRoute>
+          <CustomerSupport />
         </ProtectedRoute>
       </Route>
 
@@ -90,6 +115,36 @@ function Router() {
           <AdminDashboard />
         </ProtectedRoute>
       </Route>
+
+      <Route path="/admin/erp/administration">
+        <ProtectedRoute requiredStaff>
+          <AdminERPAdministration />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/erp">
+        <ProtectedRoute requiredStaff>
+          <AdminERP />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/notifications">
+        <ProtectedRoute requiredStaff>
+          <NotificationCenter />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/travel-support">
+        <ProtectedRoute requiredStaff>
+          <AdminTravelSupport />
+        </ProtectedRoute>
+      </Route>
+
+      <Route path="/admin/marketing/campaigns">
+  <ProtectedRoute requiredStaff>
+    <MarketingCampaigns />
+  </ProtectedRoute>
+</Route>
 
       <Route path="/admin/crm">
         <ProtectedRoute requiredStaff>

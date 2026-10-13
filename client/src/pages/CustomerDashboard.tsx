@@ -1,30 +1,32 @@
 import { useCallback, useEffect, useState } from "react";
-import { ArrowRight, CalendarDays, Clock3, Eye, FileText, Heart, ListChecks, Loader2, Plane, RefreshCw } from "lucide-react";
+import { ArrowRight, CalendarDays, Clock3, Eye, FileText, Heart, ListChecks, Loader2, Plane, RefreshCw, FileCheck2, MessageCircle } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
 import CustomerLayout from "@/components/customer/CustomerLayout";
 import TourCard from "@/components/site/TourCard";
 import { Button } from "@/components/ui/button";
+import { supabase } from "@/lib/supabase";
 import { getCustomerActivity, getCustomerOperationalData, getRecentlyViewedTours, getWishlist, type CustomerActivity } from "@/lib/customer";
 
 export default function CustomerDashboard() {
   const { user, loading: authLoading, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [data, setData] = useState<any>({ enquiries: [], callbacks: [], appointments: [], bookings: [], wishlist: [], recentlyViewed: [], activity: [] });
+  const [data, setData] = useState<any>({ enquiries: [], callbacks: [], appointments: [], bookings: [], wishlist: [], recentlyViewed: [], activity: [], unreadNotifications: 0 });
 
   const load = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setError(null);
     try {
-      const [operational, wishlist, recentlyViewed, activity] = await Promise.all([
+      const [operational, wishlist, recentlyViewed, activity, notificationCount] = await Promise.all([
         getCustomerOperationalData(user.id),
         getWishlist(user.id),
         getRecentlyViewedTours(user.id),
         getCustomerActivity(user.id, 8),
+        supabase.from("notifications").select("id", { count: "exact", head: true }).eq("recipient_user_id", user.id).eq("is_read", false),
       ]);
-      setData({ ...operational, wishlist, recentlyViewed, activity });
+      setData({ ...operational, wishlist, recentlyViewed, activity, unreadNotifications: notificationCount.error ? 0 : (notificationCount.count ?? 0) });
     } catch (loadError) {
       const message = loadError instanceof Error ? loadError.message : "Unable to load your customer dashboard.";
       setError(message);
@@ -77,6 +79,15 @@ export default function CustomerDashboard() {
               <Metric icon={Eye} label="Recently viewed" value={data.recentlyViewed.length} href="/dashboard/recently-viewed" />
             </div>
 
+            <section className="grid gap-3 sm:grid-cols-2">
+              <Link href="/dashboard/travel-assistance" className="group rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5 transition hover:border-[#f26b35]">
+                <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#fff0e8] text-[#c94d1c]"><FileCheck2 size={19}/></span><div><h2 className="font-extrabold">Visa & passport assistance</h2><p className="mt-1 text-sm text-[#6f6c66]">Submit applications, upload documents and track updates.</p></div><ArrowRight size={16} className="ml-auto shrink-0 transition group-hover:translate-x-1"/></div>
+              </Link>
+              <Link href="/dashboard/support" className="group rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5 transition hover:border-[#f26b35]">
+                <div className="flex items-center gap-3"><span className="grid h-10 w-10 place-items-center rounded-xl bg-[#fff0e8] text-[#c94d1c]"><MessageCircle size={19}/></span><div><h2 className="font-extrabold">Customer support</h2><p className="mt-1 text-sm text-[#6f6c66]">Create a ticket and follow replies from the AeroFly team.</p></div><ArrowRight size={16} className="ml-auto shrink-0 transition group-hover:translate-x-1"/></div>
+              </Link>
+            </section>
+
             <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5">
               <div className="eyebrow">Quick actions</div>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -125,7 +136,7 @@ export default function CustomerDashboard() {
             <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
               <SectionHeading eyebrow="Notifications" title="Travel desk updates" href="/dashboard/notifications" />
               <div className="mt-5 rounded-xl bg-[#f8f4ee] p-4 text-[12px] leading-5 text-[#6f6c66]">
-                <span className="font-bold text-[#20201e]">Notifications are ready as a customer-platform placeholder.</span> Delivery channels and staff-triggered notifications will be connected in the operational workflow later.
+                <span className="font-bold text-[#20201e]">{data.unreadNotifications} unread notification{data.unreadNotifications === 1 ? "" : "s"}.</span> Booking proposals, payment updates, travel-document requests and support replies appear here. <Link href="/dashboard/notifications" className="ml-1 font-bold text-[#c94d1c] underline">Open notification centre</Link>
               </div>
             </section>
 

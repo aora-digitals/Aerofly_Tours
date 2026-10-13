@@ -4,7 +4,6 @@ import { Link } from "wouter";
 import { toast } from "sonner";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
-import { hasWorkspacePermission } from "@shared/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,7 +16,7 @@ const PRIORITIES = ["low","normal","high"] as const;
 export default function AdminCRM() {
   const { user } = useAuth();
   const [tab, setTab] = useState<"dashboard" | "enquiries" | "customers" | "appointments" | "callbacks">("dashboard");
-  const allowed = hasWorkspacePermission(user?.role, "crm");
+  const allowed = Boolean(user?.permissions.includes("enquiries.read"));
 
   if (!allowed) {
     return <div className="min-h-[70vh] grid place-items-center"><div className="max-w-md rounded-2xl border border-[#deded9] bg-white p-8 text-center"><ShieldIcon /><h1 className="mt-4 text-xl font-extrabold">CRM access is restricted.</h1><p className="mt-2 text-sm leading-6 text-[#77736c]">Your current AeroFly role does not have customer-operations access.</p><Link href="/admin" className="btn btn-primary mt-5 inline-flex">Back to workspace</Link></div></div>;

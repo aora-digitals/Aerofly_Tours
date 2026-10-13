@@ -1,13 +1,100 @@
-import { describe, expect, it } from "vitest";
+import {
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { appRouter } from "./routers";
 import type { TrpcContext } from "./_core/context";
 import { convertFromInr, getMinorUnitAmount } from "./currency";
+
+const authorizationMocks = vi.hoisted(() => ({
+  hasDatabaseWorkspacePermission: vi.fn(),
+  hasDatabasePermission: vi.fn(),
+  hasGlobalDatabasePermission: vi.fn(),
+}));
+
+vi.mock("./_core/workspaceAuthorization", () => ({
+  ...authorizationMocks,
+}));
+
+type TestRole =
+  | "user"
+  | "owner"
+  | "admin"
+  | "manager"
+  | "marketing"
+  | "counsellor";
+
+const roleFromToken = (
+  token: string | null | undefined,
+): TestRole | null => {
+  const match = token?.match(/^test-role:(.+)$/);
+  return (match?.[1] as TestRole | undefined) ?? null;
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+
+  authorizationMocks.hasDatabaseWorkspacePermission
+    .mockImplementation(async (token, permission) => {
+      const role = roleFromToken(token);
+
+      if (role === "owner" || role === "admin") {
+        return true;
+      }
+
+      if (role === "marketing") {
+        return ["overview", "catalogue"].includes(permission);
+      }
+
+      if (role === "counsellor") {
+        return permission === "quotes";
+      }
+
+      if (role === "manager") {
+        return ["finance", "enquiries"].includes(permission);
+      }
+
+      return false;
+    });
+
+  authorizationMocks.hasDatabasePermission
+    .mockImplementation(async (token, permissions) => {
+      const role = roleFromToken(token);
+
+      return (
+        (role === "owner" || role === "admin") &&
+        permissions.includes("roles.manage")
+      );
+    });
+
+  authorizationMocks.hasGlobalDatabasePermission
+    .mockImplementation(async (token, permissions) => {
+      const role = roleFromToken(token);
+
+      if (role === "owner" || role === "admin") {
+        return true;
+      }
+
+      if (role === "marketing") {
+        return permissions.includes("admin.dashboard.read");
+      }
+
+      if (role === "counsellor") {
+        return permissions.includes("bookings.read");
+      }
+
+      return false;
+    });
+});
 
 type TestUser = NonNullable<TrpcContext["user"]>;
 function context(role: TestUser["role"]): TrpcContext {
   const now = new Date();
   const user: TestUser = { id: 42, openId: "aerofly-test", email: "test@example.com", name: "Test Traveller", loginMethod: "test", role, createdAt: now, updatedAt: now, lastSignedIn: now };
-  return { user, req: { protocol: "https", headers: {} } as TrpcContext["req"], res: {} as TrpcContext["res"] };
+  return { user, req: { protocol: "https", headers: {} } as TrpcContext["req"], res: {} as TrpcContext["res"],supabaseAccessToken: `test-role:${role}`, };
 }
 
 describe("AeroFly business guardrails", () => {
@@ -61,10 +148,18 @@ describe("AeroFly business guardrails", () => {
     await expect(caller.admin.catalogue.list()).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 
-  it("prevents an owner from removing their own owner access", async () => {
-    const caller = appRouter.createCaller(context("owner"));
-    await expect(caller.admin.team.updateRole({ id: 42, role: "staff" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+  it("prevents an owner from changing roles through the legacy endpoint", async () => {
+  const caller = appRouter.createCaller(context("owner"));
+
+  await expect(
+    caller.admin.team.updateRole({
+      id: 42,
+      role: "staff",
+    }),
+  ).rejects.toMatchObject({
+    code: "PRECONDITION_FAILED",
   });
+});
 
   it("lets counsellors work the sales pipeline but blocks finance controls", async () => {
     const caller = appRouter.createCaller(context("counsellor"));
@@ -111,7 +206,7 @@ describe("AeroFly business guardrails", () => {
 
   it("rejects incomplete callback requests before database work", async () => {
     const caller = appRouter.createCaller(context("user"));
-    await expect(caller.callback.request({ name: "A", email: "bad", phone: "" })).rejects.toMatchObject({ code: "BAD_REQUEST" });
+    await expect(caller.callback.request({ name: "A", email: "bad", phone: "",reason: "Test callback request", })).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 
   it("rejects incomplete appointment requests before database work", async () => {
