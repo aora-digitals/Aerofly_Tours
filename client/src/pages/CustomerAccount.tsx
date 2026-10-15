@@ -138,7 +138,372 @@ function RecentlyViewedSection({ userId }: { userId: string }) { const [items, s
 
 function ActivitySection({ userId }: { userId: string }) { const [items, setItems] = useState<CustomerActivity[]>([]); const [loading, setLoading] = useState(true); useEffect(() => { void getCustomerActivity(userId, 50).then(setItems).catch((e) => toast.error(e.message)).finally(() => setLoading(false)); }, [userId]); return <PageShell eyebrow="Activity" title="Your AeroFly activity" description="Only useful travel interactions are retained for future personalization and account context.">{loading ? <AccountLoading /> : items.length === 0 ? <EmptyState title="No activity yet" copy="Your activity will appear after you browse, save or contact AeroFly." /> : <div className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] divide-y divide-[#eee9e1]">{items.map((item) => <div key={item.id} className="flex gap-4 p-5"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]"><Eye size={16} /></div><div><div className="text-sm font-bold capitalize">{item.activity_type.replaceAll("_", " ")}</div><div className="mt-1 text-xs text-[#77736c]">{item.entity_type ? `${item.entity_type}${item.entity_id ? ` #${item.entity_id}` : ""}` : "Account"} · {new Date(item.created_at).toLocaleString()}</div></div></div>)}</div>}</PageShell>; }
 
-function EnquiriesSection({ userId }: { userId: string }) { const [items, setItems] = useState<any[]>([]); const [loading, setLoading] = useState(true); useEffect(() => { void supabase.from("enquiries").select("*").eq("customer_auth_id", userId).order("createdAt", { ascending: false }).then(({ data, error }) => { if (error) toast.error(error.message); setItems(data ?? []); setLoading(false); }); }, [userId]); return <PageShell eyebrow="My enquiries" title="Your travel requests" description="Track the requests you have sent to AeroFly and their current status.">{loading ? <AccountLoading /> : items.length === 0 ? <EmptyState title="No enquiries yet" copy="Start with a tour or contact AeroFly for a custom itinerary." href="/tours" action="Explore tours" /> : <div className="space-y-3">{items.map((item) => <article key={item.id} className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5"><div className="flex flex-wrap justify-between gap-3"><div><div className="font-extrabold">{item.destination || "Custom trip"}</div><div className="mt-1 text-xs text-[#77736c]">{item.reference} · {new Date(item.createdAt).toLocaleString()}</div></div><Status value={item.status} /></div><div className="mt-4 grid gap-3 text-xs text-[#6f6c66] sm:grid-cols-3"><div><b>Travel dates:</b> {item.travelDates || "Not specified"}</div><div><b>Travellers:</b> {item.travellers}</div><div><b>Trip type:</b> {item.tripType || "Not specified"}</div></div>{item.message && <p className="mt-4 rounded-xl bg-[#f8f4ee] p-4 text-xs leading-5 text-[#6f6c66]">{item.message}</p>}</article>)}</div>}</PageShell>; }
+
+function EnquiriesSection({ userId }: { userId: string }) {
+  const [items, setItems] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [expandedPlans, setExpandedPlans] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let active = true;
+
+    void supabase
+      .from("enquiries")
+      .select("*")
+      .eq("customer_auth_id", userId)
+      .order("createdAt", { ascending: false })
+      .then(({ data, error }) => {
+        if (!active) return;
+
+        if (error) toast.error(error.message);
+        setItems(data ?? []);
+        setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [userId]);
+
+  function parseTripPlan(message: string): Record<string, any> | null {
+    const marker = "COMPLETE SAVED TRIP PLAN";
+    const markerIndex = message.indexOf(marker);
+
+    if (markerIndex === -1) return null;
+
+    const jsonText = message.slice(markerIndex + marker.length).trim();
+
+    try {
+      const parsed: unknown = JSON.parse(jsonText);
+
+      if (typeof parsed === "object" && parsed !== null) {
+        return parsed as Record<string, any>;
+      }
+    } catch {
+      return null;
+    }
+
+    return null;
+  }
+
+  function readableValue(value: unknown): string {
+    if (value == null) return "";
+    if (typeof value === "string" || typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "boolean") return value ? "Yes" : "No";
+
+    if (Array.isArray(value)) {
+      return value.map(readableValue).filter(Boolean).join(", ");
+    }
+
+    if (typeof value === "object") {
+      const object = value as Record<string, unknown>;
+      const preferredKeys = [
+        "title",
+        "name",
+        "description",
+        "activity",
+        "label",
+        "location",
+      ];
+
+      for (const key of preferredKeys) {
+        if (typeof object[key] === "string" && object[key].trim()) {
+          return object[key] as string;
+        }
+      }
+
+      return Object.entries(object)
+        .filter(([, entry]) => entry != null && entry !== "")
+        .map(([key, entry]) => {
+          const label = key
+            .replace(/([a-z])([A-Z])/g, "$1 $2")
+            .replace(/[_-]/g, " ")
+            .replace(/^./, (char) => char.toUpperCase());
+
+          return `${label}: ${readableValue(entry)}`;
+        })
+        .join(" · ");
+    }
+
+    return "";
+  }
+
+  function displayLabel(value: string): string {
+    return value
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .replace(/[_-]/g, " ")
+      .replace(/^./, (char) => char.toUpperCase());
+  }
+
+  return (
+    <PageShell
+      eyebrow="My enquiries"
+      title="Your travel requests"
+      description="Track the requests you have sent to AeroFly and their current status."
+    >
+      {loading ? (
+        <AccountLoading />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title="No enquiries yet"
+          copy="Start with a tour or contact AeroFly for a custom itinerary."
+          href="/tours"
+          action="Explore tours"
+        />
+      ) : (
+        <div className="space-y-4">
+          {items.map((item) => {
+            const plan = item.message
+              ? parseTripPlan(item.message)
+              : null;
+
+            const itinerary =
+              plan?.itinerary &&
+              typeof plan.itinerary === "object"
+                ? plan.itinerary
+                : null;
+
+            const days = Array.isArray(itinerary?.days)
+              ? itinerary.days
+              : [];
+
+            const preferences =
+              plan?.preferences &&
+              typeof plan.preferences === "object"
+                ? plan.preferences
+                : {};
+
+            const budgetEstimate =
+              plan?.budgetEstimate ??
+              itinerary?.budgetEstimate ??
+              null;
+
+            const isExpanded = !!expandedPlans[String(item.id)];
+
+            return (
+              <article
+                key={item.id}
+                className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5"
+              >
+                <div className="flex flex-wrap justify-between gap-3">
+                  <div>
+                    <div className="font-extrabold">
+                      {item.destination || itinerary?.destination || "Custom trip"}
+                    </div>
+
+                    <div className="mt-1 text-xs text-[#77736c]">
+                      {item.reference} ·{" "}
+                      {new Date(item.createdAt).toLocaleString()}
+                    </div>
+                  </div>
+
+                  <Status value={item.status} />
+                </div>
+
+                <div className="mt-4 grid gap-3 text-xs text-[#6f6c66] sm:grid-cols-3">
+                  <div>
+                    <b>Travel dates:</b>{" "}
+                    {item.travelDates || "Not specified"}
+                  </div>
+                  <div>
+                    <b>Travellers:</b> {item.travellers}
+                  </div>
+                  <div>
+                    <b>Trip type:</b>{" "}
+                    {item.tripType || "Not specified"}
+                  </div>
+                </div>
+
+                {itinerary ? (
+                  <div className="mt-4 overflow-hidden rounded-xl border border-[#e8e4dd]">
+                    <div className="bg-[#f8f4ee] p-4">
+                      <div className="text-lg font-extrabold text-[#25231f]">
+                        {itinerary.title || plan?.planTitle || "Custom trip plan"}
+                      </div>
+
+                      {itinerary.summary && (
+                        <p className="mt-2 text-sm leading-6 text-[#6f6c66]">
+                          {itinerary.summary}
+                        </p>
+                      )}
+
+                      <div className="mt-3 grid gap-3 text-sm sm:grid-cols-2">
+                        <div>
+                          <span className="text-[#77736c]">Route</span>
+                          <p className="font-semibold">
+                            {preferences.origin || "Not specified"} →{" "}
+                            {preferences.destination ||
+                              itinerary.destination ||
+                              item.destination}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="text-[#77736c]">Duration</span>
+                          <p className="font-semibold">
+                            {itinerary.durationDays ?? days.length} days
+                            {preferences.durationNights != null
+                              ? ` / ${preferences.durationNights} nights`
+                              : ""}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="text-[#77736c]">Budget preference</span>
+                          <p className="font-semibold">
+                            {preferences.currency || "INR"}{" "}
+                            {preferences.budget ?? "Not specified"}
+                          </p>
+                        </div>
+
+                        <div>
+                          <span className="text-[#77736c]">Estimated total</span>
+                          <p className="font-semibold">
+                            {budgetEstimate?.currency ||
+                              preferences.currency ||
+                              "INR"}{" "}
+                            {budgetEstimate?.total ?? "Not specified"}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedPlans((current) => ({
+                            ...current,
+                            [String(item.id)]: !current[String(item.id)],
+                          }))
+                        }
+                        className="flex w-full items-center justify-between gap-3 text-left font-bold text-[#25231f]"
+                        aria-expanded={isExpanded}
+                      >
+                        <span>
+                          Complete day-by-day itinerary ({days.length} days)
+                        </span>
+                        <span>{isExpanded ? "−" : "+"}</span>
+                      </button>
+
+                      {isExpanded && (
+                        <div className="mt-4 space-y-3">
+                          {days.map((day: Record<string, any>, index: number) => {
+                            const activities = Array.isArray(day.activities)
+                              ? day.activities
+                              : [];
+
+                            const meals = Array.isArray(day.meals)
+                              ? day.meals
+                              : [];
+
+                            return (
+                              <section
+                                key={day.dayNumber ?? day.day ?? index}
+                                className="rounded-xl border border-[#e8e4dd] p-4"
+                              >
+                                <h4 className="font-bold text-[#25231f]">
+                                  Day {day.dayNumber ?? day.day ?? index + 1}
+                                  {day.title ? ` — ${day.title}` : ""}
+                                </h4>
+
+                                {day.description && (
+                                  <p className="mt-2 text-sm leading-6 text-[#6f6c66]">
+                                    {day.description}
+                                  </p>
+                                )}
+
+                                {activities.length > 0 && (
+                                  <div className="mt-3">
+                                    <h5 className="text-sm font-semibold">
+                                      Activities and sightseeing
+                                    </h5>
+                                    <ul className="mt-2 list-disc space-y-2 pl-5 text-sm leading-6 text-[#6f6c66]">
+                                      {activities.map(
+                                        (activity: unknown, activityIndex: number) => (
+                                          <li key={activityIndex}>
+                                            {readableValue(activity)}
+                                          </li>
+                                        ),
+                                      )}
+                                    </ul>
+                                  </div>
+                                )}
+
+                                {meals.length > 0 && (
+                                  <p className="mt-3 text-sm leading-6 text-[#6f6c66]">
+                                    <b>Meals:</b>{" "}
+                                    {meals.map(readableValue).join(", ")}
+                                  </p>
+                                )}
+
+                                {day.accommodation && (
+                                  <p className="mt-3 text-sm leading-6 text-[#6f6c66]">
+                                    <b>Accommodation:</b>{" "}
+                                    {readableValue(day.accommodation)}
+                                  </p>
+                                )}
+
+                                {day.stay && (
+                                  <p className="mt-3 text-sm leading-6 text-[#6f6c66]">
+                                    <b>Stay:</b> {readableValue(day.stay)}
+                                  </p>
+                                )}
+
+                                {day.estimatedCost != null && (
+                                  <p className="mt-3 text-sm text-[#6f6c66]">
+                                    <b>Estimated daily cost:</b>{" "}
+                                    {preferences.currency || "INR"}{" "}
+                                    {day.estimatedCost}
+                                  </p>
+                                )}
+
+                                {Object.entries(day).filter(
+                                  ([key, value]) =>
+                                    ![
+                                      "dayNumber",
+                                      "day",
+                                      "title",
+                                      "description",
+                                      "activities",
+                                      "meals",
+                                      "accommodation",
+                                      "stay",
+                                      "estimatedCost",
+                                    ].includes(key) &&
+                                    value != null &&
+                                    value !== "",
+                                ).map(([key, value]) => (
+                                  <p
+                                    key={key}
+                                    className="mt-2 text-sm leading-6 text-[#6f6c66]"
+                                  >
+                                    <b>{displayLabel(key)}:</b>{" "}
+                                    {readableValue(value)}
+                                  </p>
+                                ))}
+                              </section>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : item.message ? (
+                  <p className="mt-4 whitespace-pre-wrap break-words rounded-xl bg-[#f8f4ee] p-4 text-sm leading-6 text-[#6f6c66]">
+                    {item.message}
+                  </p>
+                ) : null}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </PageShell>
+  );
+}
 
 function AppointmentsSection({ userId }: { userId: string }) { const [items, setItems] = useState<any[]>([]); const [loading, setLoading] = useState(true); const load = useCallback(async () => { setLoading(true); const { data, error } = await supabase.from("appointments").select("*").eq("customer_auth_id", userId).order("appointmentAt", { ascending: true }); if (error) toast.error(error.message); setItems(data ?? []); setLoading(false); }, [userId]); useEffect(() => { void load(); }, [load]); const cancel = async (id: number) => { try { await cancelCustomerAppointment(id); toast.success("Appointment cancelled."); await load(); } catch (e) { toast.error(e instanceof Error ? e.message : "Unable to cancel appointment."); } }; return <PageShell eyebrow="Appointments" title="Your appointment requests" description="Review scheduled conversations with the AeroFly travel desk.">{loading ? <AccountLoading /> : items.length === 0 ? <EmptyState title="No appointments" copy="You can request an appointment through the existing AeroFly customer-care flow." href="/contact" action="Contact AeroFly" /> : <div className="space-y-3">{items.map((item) => <RequestCard key={item.id} icon={CalendarDays} title={item.purpose} reference={item.reference} status={item.status} details={`${new Date(item.appointmentAt).toLocaleString()} · ${item.mode} · ${item.durationMinutes} min`} cancelable={["requested", "confirmed"].includes(item.status)} onCancel={() => void cancel(item.id)} />)}</div>}</PageShell>; }
 

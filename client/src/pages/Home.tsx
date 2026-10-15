@@ -23,6 +23,7 @@ import DemoTripExplorer from "@/components/site/DemoTripExplorer";
 import Reveal from "@/components/site/Reveal";
 import { trpc } from "@/lib/trpc";
 import { usePageMeta } from "../hooks/usePageMeta";
+// import AIExplorer from "@/components/site/AIExplorer";
  
 const heroImage = "https://images.unsplash.com/photo-1542296332-2e4473faf563?auto=format&fit=crop&w=1800&q=82";
 const iconMap: Record<string, typeof Compass> = {
@@ -105,17 +106,34 @@ export default function Home() {
           <>
             <TourSection title="Featured journeys" eyebrow="A considered collection" tours={data?.featuredTours ?? []} loading={isLoading} />
             <TourSection title="Trending right now" eyebrow="What travellers are exploring" tours={data?.trendingTours ?? []} loading={isLoading} muted />
+           
+            <Reveal>
+  <section className="section pt-8">
+    <div className="container">
+      <AITripConcierge />
+    </div>
+  </section>
+</Reveal>
+
             <Reveal><section className="section bg-[#f3ede5]"><div className="container"><div className="flex items-end justify-between gap-5"><div><div className="eyebrow">Go where it feels right</div><h2 className="display mt-3 text-4xl font-extrabold sm:text-5xl">Places with a point of view.</h2></div><Link href="/destinations" className="hidden items-center gap-2 text-[13px] font-bold text-[#c94d1c] sm:flex">Explore destinations <ArrowRight size={15} /></Link></div><div className="mt-10 grid auto-rows-[220px] gap-4 md:grid-cols-4 md:grid-rows-[250px_190px]">{destinations.map((destination, index) => <Link key={destination.slug} href={`/destinations/${destination.slug}`} className={`group relative overflow-hidden rounded-2xl ${index === 0 ? "md:col-span-2 md:row-span-2" : index === 1 ? "md:col-span-2" : ""}`}><img src={destination.imageUrl ?? heroImage} alt={destination.name} loading="lazy" className="absolute inset-0 h-full w-full object-cover transition duration-700 group-hover:scale-105" /><div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" /><div className="absolute bottom-5 left-5 text-white"><div className="text-[10px] font-bold uppercase tracking-[.17em] text-white/70">{destination.kind === "domestic" ? "India" : "International"}</div><div className="mt-1 font-['Manrope'] text-2xl font-extrabold">{destination.name}</div><div className="mt-1 max-w-[220px] text-[12px] text-white/72">{destination.tagline}</div></div></Link>)}</div></div></section></Reveal>
             <TourSection title="Domestic favourites" eyebrow="India, thoughtfully" tours={data?.domesticTours ?? []} loading={isLoading} />
             <TourSection title="International escapes" eyebrow="Beyond the familiar" tours={data?.internationalTours ?? []} loading={isLoading} muted />
+
+            <Reveal>
+  <DemoTripExplorer />
+</Reveal>
+
+
             <TourSection title="Honeymoon escapes" eyebrow="For two" tours={data?.honeymoonTours ?? []} loading={isLoading} />
             <TourSection title="Family journeys" eyebrow="Together time" tours={data?.familyTours ?? []} loading={isLoading} muted />
             <TourSection title="Seasonal routes" eyebrow="Travel with the moment" tours={data?.seasonalTours ?? []} loading={isLoading} />
           </>
         )}
 
-        <Reveal><section className="section pt-8"><div className="container"><AITripConcierge /></div></section></Reveal>
-        <Reveal><DemoTripExplorer /></Reveal>
+{/* <Reveal>
+  <AIExplorer />
+</Reveal> */}
+
 
         <section className="section">
           <div className="container">

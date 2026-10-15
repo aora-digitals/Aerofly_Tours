@@ -35,6 +35,7 @@ import NotificationCenter from "./pages/NotificationCenter";
 import AdminERP from "./pages/AdminERP";
 import AdminERPAdministration from "./pages/AdminERPAdministration";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
+import FloatingTravelConcierge from "./components/site/FloatingTravelConcierge";
 
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -193,6 +194,7 @@ export default function App() {
             <TooltipProvider>
               <Toaster />
               <Router />
+               <FloatingTravelConcierge />
             </TooltipProvider>
           </CurrencyProvider>
         </AuthProvider>
