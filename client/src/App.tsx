@@ -36,6 +36,9 @@ import AdminERP from "./pages/AdminERP";
 import AdminERPAdministration from "./pages/AdminERPAdministration";
 import MarketingCampaigns from "./pages/MarketingCampaigns";
 import FloatingTravelConcierge from "./components/site/FloatingTravelConcierge";
+import KnowledgeBaseManager from "./components/admin/KnowledgeBaseManager";
+import CustomerPreferences from "./pages/CustomerPreferences";
+import RecommendationAnalytics from "./pages/RecommendationAnalytics";
 
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -97,11 +100,18 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+       <Route path="/dashboard/preferences">
+  <ProtectedRoute>
+    <CustomerPreferences />
+  </ProtectedRoute>
+</Route>
+
       <Route path="/dashboard/:section">
         <ProtectedRoute>
           <CustomerAccount />
         </ProtectedRoute>
       </Route>
+
 
       <Route path="/payment-status">
         <ProtectedRoute>
@@ -135,6 +145,15 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+<Route path="/admin/recommendation-analytics">
+  <ProtectedRoute
+    requiredStaff
+    requiredPermission="reports.read"
+  >
+    <RecommendationAnalytics />
+  </ProtectedRoute>
+</Route>
+
       <Route path="/admin/travel-support">
         <ProtectedRoute requiredStaff>
           <AdminTravelSupport />
@@ -144,6 +163,12 @@ function Router() {
       <Route path="/admin/marketing/campaigns">
   <ProtectedRoute requiredStaff>
     <MarketingCampaigns />
+  </ProtectedRoute>
+</Route>
+
+<Route path="/admin/knowledge-base">
+  <ProtectedRoute requiredStaff>
+    <KnowledgeBaseManager />
   </ProtectedRoute>
 </Route>
 

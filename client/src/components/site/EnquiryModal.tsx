@@ -60,13 +60,13 @@ const submit = async (event: React.FormEvent<HTMLFormElement>) => {
 
     setSent(true);
 
-    if (user?.id) {
-      void recordCustomerActivity(
-        user.id,
-        "enquiry_submitted",
-        "enquiry",
-      ).catch(() => undefined);
-    }
+    // if (user?.id) {
+    //   void recordCustomerActivity(
+    //     user.id,
+    //     "enquiry_submitted",
+    //     "enquiry",
+    //   ).catch(() => undefined);
+    // }
 
     toast.success(
       `Enquiry submitted successfully. Reference: ${data.reference}`,

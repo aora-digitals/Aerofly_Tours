@@ -7,12 +7,19 @@ import TourCard from "@/components/site/TourCard";
 import { Button } from "@/components/ui/button";
 import { supabase } from "@/lib/supabase";
 import { getCustomerActivity, getCustomerOperationalData, getRecentlyViewedTours, getWishlist, type CustomerActivity } from "@/lib/customer";
+import { trpc } from "@/lib/trpc";
+import PersonalizedTourRecommendations from "@/components/site/PersonalizedTourRecommendations";
 
 export default function CustomerDashboard() {
   const { user, loading: authLoading, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<any>({ enquiries: [], callbacks: [], appointments: [], bookings: [], wishlist: [], recentlyViewed: [], activity: [], unreadNotifications: 0 });
+
+
+  const { data: catalogue } = trpc.content.home.useQuery(undefined, {
+  staleTime: 60_000,
+});
 
   const load = useCallback(async () => {
     if (!user) return;
@@ -127,11 +134,18 @@ export default function CustomerDashboard() {
             </div>
 
             <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
-              <SectionHeading eyebrow="Recommended tours" title="Personalized journeys — coming next" />
-              <div className="mt-5 rounded-xl border border-dashed border-[#dcd4c9] bg-[#fbf8f3] p-5 text-[12px] leading-5 text-[#77736c]">
-                Recommendations are intentionally a placeholder in Phase 3. Preferences, wishlist, recent views and enquiries are now stored in a clean foundation for the future recommendation engine.
-              </div>
-            </section>
+  <PersonalizedTourRecommendations
+    tours={[
+      ...(catalogue?.featuredTours ?? []),
+      ...(catalogue?.trendingTours ?? []),
+      ...(catalogue?.domesticTours ?? []),
+      ...(catalogue?.internationalTours ?? []),
+    ]}
+    title="Recommended for you"
+    source="dashboard"
+    limit={3}
+  />
+</section>
 
             <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">
               <SectionHeading eyebrow="Notifications" title="Travel desk updates" href="/dashboard/notifications" />

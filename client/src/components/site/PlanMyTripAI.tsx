@@ -1,6 +1,6 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Bot, Loader2, Send, Sparkles, ArrowRight, ArrowLeft } from "lucide-react";
+import { Bot, Loader2, Send, Sparkles, ArrowRight} from "lucide-react";
 import { useState} from "react";
 import { Link } from "wouter";
 import { supabase } from "@/lib/supabase";

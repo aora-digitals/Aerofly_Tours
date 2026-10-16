@@ -1,7 +1,7 @@
 
 import {
   ArrowLeft,
-  Check,Clock,Loader2, Pencil, Plus, Save, Sparkles, Trash2,
+  Check,Loader2, Pencil, Plus, Save, Sparkles, Trash2,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
@@ -148,7 +148,7 @@ export default function AIItineraryPlanner() {
   const [planTitle, setPlanTitle] = useState("My travel plan");
   const [version, setVersion] = useState(0);
   const [plans, setPlans] = useState<SavedPlan[]>([]);
-  const [versions, setVersions] = useState<Version[]>([]);
+  // const [versions, setVersions] = useState<Version[]>([]);
   const [enquiryOpen, setEnquiryOpen] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [contact, setContact] = useState({ name: "", email: "", phone: "" });
@@ -469,9 +469,9 @@ async function invoke<T>(
 }
 
 
-function safeArray<T>(value: T[] | null | undefined): T[] {
-  return Array.isArray(value) ? value : [];
-}
+// function safeArray<T>(value: T[] | null | undefined): T[] {
+//   return Array.isArray(value) ? value : [];
+// }
 
   
 async function generate() {
@@ -621,7 +621,7 @@ async function generate() {
     setPlanId(id);
     setPlanTitle(result.plan.title);
     setPreferences(result.plan.preferences as Preferences);
-    setVersions(result.versions);
+    // setVersions(result.versions);
 
     const current = result.versions.find(
       (v) => v.version_number === result.plan.current_version,
@@ -642,7 +642,7 @@ async function generate() {
       if (planId === id) {
         setPlanId(null);
         setItinerary(null);
-        setVersions([]);
+        // setVersions([]);
         setVersion(0);
       }
       await loadPlans();
@@ -688,65 +688,65 @@ async function generate() {
     });
   }
 
-  function addActivity(dayIndex: number) {
-    setItinerary((current) => {
-      if (!current) return current;
+  // function addActivity(dayIndex: number) {
+  //   setItinerary((current) => {
+  //     if (!current) return current;
 
-      return {
-        ...current,
-        days: current.days.map((day, index) =>
-          index !== dayIndex
-            ? day
-            : {
-                ...day,
-                activities: [
-                  ...day.activities,
-                  {
-                    title: "New activity",
-                    location: day.destination,
-                    description: "Edit this activity to describe your plans.",
-                    durationMinutes: 60,
-                    estimatedCost: 0,
-                    costCurrency: current.currency,
-                    costBasis: "unknown",
-                    transportSuggestion: "Confirm local transport before travelling.",
-                    mealSuggestion: null,
-                    sourceType: "general_suggestion",
-                    catalogueTourSlug: null,
-                  },
-                ],
-              },
-        ),
-      };
-    });
-  }
+  //     return {
+  //       ...current,
+  //       days: current.days.map((day, index) =>
+  //         index !== dayIndex
+  //           ? day
+  //           : {
+  //               ...day,
+  //               activities: [
+  //                 ...day.activities,
+  //                 {
+  //                   title: "New activity",
+  //                   location: day.destination,
+  //                   description: "Edit this activity to describe your plans.",
+  //                   durationMinutes: 60,
+  //                   estimatedCost: 0,
+  //                   costCurrency: current.currency,
+  //                   costBasis: "unknown",
+  //                   transportSuggestion: "Confirm local transport before travelling.",
+  //                   mealSuggestion: null,
+  //                   sourceType: "general_suggestion",
+  //                   catalogueTourSlug: null,
+  //                 },
+  //               ],
+  //             },
+  //       ),
+  //     };
+  //   });
+  // }
 
   
-const updateActivity = (
-  dayIndex: number,
-  activityIndex: number,
-  updates: Partial<Activity>,
-) => {
-  setItinerary((current) => {
-    if (!current) return current;
+// const updateActivity = (
+//   dayIndex: number,
+//   activityIndex: number,
+//   updates: Partial<Activity>,
+// ) => {
+//   setItinerary((current) => {
+//     if (!current) return current;
 
-    return {
-      ...current,
-      days: current.days.map((day, dIndex) => {
-        if (dIndex !== dayIndex) return day;
+//     return {
+//       ...current,
+//       days: current.days.map((day, dIndex) => {
+//         if (dIndex !== dayIndex) return day;
 
-        return {
-          ...day,
-          activities: day.activities.map((activity, aIndex) =>
-            aIndex === activityIndex
-              ? { ...activity, ...updates }
-              : activity,
-          ),
-        };
-      }),
-    };
-  });
-};
+//         return {
+//           ...day,
+//           activities: day.activities.map((activity, aIndex) =>
+//             aIndex === activityIndex
+//               ? { ...activity, ...updates }
+//               : activity,
+//           ),
+//         };
+//       }),
+//     };
+//   });
+// };
 
 
   function startEditingActivity(dayIndex: number, activityIndex: number) {
@@ -787,56 +787,55 @@ function saveEditingActivity() {
 }
 
   
-function formatTripValue(value: unknown): string {
-  if (value == null) return "";
+// function formatTripValue(value: unknown): string {
+//   if (value == null) return "";
 
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
-  }
+//   if (typeof value === "string" || typeof value === "number") {
+//     return String(value);
+//   }
 
-  if (typeof value === "boolean") {
-    return value ? "Yes" : "No";
-  }
+//   if (typeof value === "boolean") {
+//     return value ? "Yes" : "No";
+//   }
 
-  if (Array.isArray(value)) {
-    return value.map(formatTripValue).filter(Boolean).join(", ");
-  }
+//   if (Array.isArray(value)) {
+//     return value.map(formatTripValue).filter(Boolean).join(", ");
+//   }
 
-  if (typeof value === "object") {
-    const obj = value as Record<string, unknown>;
+//   if (typeof value === "object") {
+//     const obj = value as Record<string, unknown>;
 
-    // Prefer a human-readable label when the object has one.
-    for (const key of [
-      "title",
-      "name",
-      "description",
-      "activity",
-      "label",
-      "location",
-      "type",
-    ]) {
-      if (typeof obj[key] === "string" && obj[key].trim()) {
-        return obj[key];
-      }
-    }
+//     // Prefer a human-readable label when the object has one.
+//     for (const key of [
+//       "title",
+//       "name",
+//       "description",
+//       "activity",
+//       "label",
+//       "location",
+//       "type",
+//     ]) {
+//       if (typeof obj[key] === "string" && obj[key].trim()) {
+//         return obj[key];
+//       }
+//     }
 
-    // Otherwise display its fields as readable text.
-    return Object.entries(obj)
-      .filter(([, fieldValue]) => fieldValue != null && fieldValue !== "")
-      .map(([key, fieldValue]) => {
-        const label = key
-          .replace(/([a-z])([A-Z])/g, "$1 $2")
-          .replace(/[_-]/g, " ")
-          .replace(/^./, (char) => char.toUpperCase());
+//     // Otherwise display its fields as readable text.
+//     return Object.entries(obj)
+//       .filter(([, fieldValue]) => fieldValue != null && fieldValue !== "")
+//       .map(([key, fieldValue]) => {
+//         const label = key
+//           .replace(/([a-z])([A-Z])/g, "$1 $2")
+//           .replace(/[_-]/g, " ")
+//           .replace(/^./, (char) => char.toUpperCase());
 
-        return `${label}: ${formatTripValue(fieldValue)}`;
-      })
-      .join(" · ");
-  }
+//         return `${label}: ${formatTripValue(fieldValue)}`;
+//       })
+//       .join(" · ");
+//   }
 
-  return "";
-}
-
+//   return "";
+// }
 
 
 async function submitEnquiry() {

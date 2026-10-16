@@ -4,6 +4,12 @@ import { Link } from "wouter";
 import { Streamdown } from "streamdown";
 import { toast } from "sonner";
 import { supabase } from "@/lib/supabase";
+import { useAuth } from "@/_core/hooks/useAuth";
+import {
+  loadRecommendationContext,
+  scoreTours,
+  trackRecommendationEvent,
+} from "@/lib/recommendations";
 
 // import AIConversationHistory from "@/components/site/AIConversationHistory";
 // import AITravelDiscoveryPanel from "@/components/site/AITravelDiscoveryPanel";
@@ -40,6 +46,7 @@ type AIResponse = {
 };
 
 export default function AITripConcierge() {
+  const { user } = useAuth();
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -50,6 +57,54 @@ export default function AITripConcierge() {
         "Welcome to the AeroFly travel desk! Tell me your destination, budget, trip duration, or preferred travel style. I'll help you explore our published tours and identify the next step.",
     },
   ]);
+
+  const personalizeTours = async (
+  candidates: TourResult[],
+): Promise<TourResult[]> => {
+  if (!user?.id || candidates.length < 2) {
+    return candidates;
+  }
+
+  try {
+    const context = await loadRecommendationContext(
+      user.id,
+    );
+
+    if (!context.preferences?.personalization_enabled) {
+      return candidates;
+    }
+
+    const scored = scoreTours(
+      candidates.map((tour) => ({
+        ...tour,
+        destination: tour.destination?.name ?? "",
+        country: tour.destination?.country ?? "",
+        status: "published",
+      })),
+      context.preferences,
+      {
+        wishlistIds: context.wishlistIds,
+        recentlyViewedIds: context.recentlyViewedIds,
+        dismissedIds: context.dismissedIds,
+        limit: Math.min(5, candidates.length),
+      },
+    );
+
+    const byId = new Map(
+      candidates.map((tour) => [tour.id, tour]),
+    );
+
+    return scored
+      .map((item) => byId.get(Number(item.tour.id)))
+      .filter(
+        (tour): tour is TourResult =>
+          Boolean(tour),
+      );
+  } catch {
+    // Personalization must never break the AI response.
+    return candidates;
+  }
+};
 
   const resetConversation = () => {
     if (busy) return;
@@ -151,14 +206,30 @@ export default function AITripConcierge() {
       }
 
       setConversationId(data.conversationId ?? conversationId);
+
+      let responseTours: TourResult[] = Array.isArray(data.tours)
+  ? data.tours
+  : [];
+
+if (responseTours.length === 0) {
+  responseTours = await searchFallback(trimmed);
+}
+      
+      const selectedTours = await personalizeTours(
+  responseTours,
+);
       setMessages((current) => [
-        ...current,
-        {
-          role: "assistant",
-          content: data.reply,
-          tours: data.tours ?? [],
-        },
-      ]);
+  ...current,
+  {
+    role: "assistant",
+    content:
+      selectedTours.length > 0 &&
+      (!Array.isArray(data.tours) || data.tours.length === 0)
+        ? `${data.reply}\n\nHere are some published AeroFly tours to explore. These are catalogue matches, not confirmed availability.`
+        : data.reply,
+    tours: selectedTours,
+  },
+]);
 
       if (data.providerStatus === "fallback") {
         toast.info("Showing catalogue-based assistance.");
@@ -167,21 +238,28 @@ export default function AITripConcierge() {
 } catch (error) {
   const errorMessage = await getAIErrorMessage(error);
 
-  // Preserve the existing catalogue fallback.
-  const fallbackTours = await searchFallback(trimmed).catch(() => []);
+  let fallbackTours: TourResult[];
+
+  try {
+    fallbackTours = await searchFallback(trimmed);
+  } catch {
+    fallbackTours = [];
+  }
+
+  const selectedFallbackTours =
+    await personalizeTours(fallbackTours);
 
   setMessages((current) => [
     ...current,
     {
       role: "assistant",
-      content: fallbackTours.length
-        ? "The AI assistant couldn't answer just now, so I've searched the published AeroFly catalogue instead. These are catalogue matches, not confirmed departures. Please contact our team to verify your dates and final price."
-        : "The AI assistant and catalogue search are temporarily unavailable. You can browse our published tours or send a custom request to our travel team.",
-      tours: fallbackTours,
+      content: selectedFallbackTours.length
+        ? "I couldn't get a response from the AI provider, so I've searched the published AeroFly catalogue instead. These are catalogue matches, not confirmed departures. Please contact our team to verify your dates and final price."
+        : "I couldn't retrieve any published tours right now. Please try again or browse our tour catalogue.",
+      tours: selectedFallbackTours,
     },
   ]);
 
-  // Show the actual readable error returned by the Edge Function.
   toast.error(errorMessage);
 } finally {
   setBusy(false);
@@ -333,10 +411,20 @@ export default function AITripConcierge() {
                     <div className="mt-3 grid gap-3">
                       {item.tours.map((tour) => (
                         <Link
-                          key={tour.id}
-                          href={`/tours/${tour.slug}`}
-                          className="flex gap-3 rounded-xl border border-[#e8e4dd] bg-white p-3 transition hover:border-[#f26b35]"
-                        >
+  key={tour.id}
+  href={`/tours/${tour.slug}`}
+  onClick={() => {
+    if (user?.id) {
+      void trackRecommendationEvent(
+        user.id,
+        tour.id,
+        "click",
+        "ai_assistant",
+      );
+    }
+  }}
+  className="flex gap-3 rounded-xl border border-[#e8e4dd] bg-white p-3 transition hover:border-[#f26b35]"
+>
                           {tour.imageUrl ? (
                             <img
                               src={tour.imageUrl}

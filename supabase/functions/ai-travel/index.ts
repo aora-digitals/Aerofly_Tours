@@ -164,8 +164,8 @@ Deno.serve(async (req) => {
     }
 
     const message = cleanText(body.message, 1200);
-    if (message.length < 3) {
-      return json(400, { error: "Message must contain at least 3 characters" });
+    if (message.length < 2) {
+      return json(400, { error: "Message must contain at least 2 characters" });
     }
 
     const history = safeHistory(body.history);

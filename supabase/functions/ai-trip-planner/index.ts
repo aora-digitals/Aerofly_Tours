@@ -232,26 +232,27 @@ function normalizeBaseUrl(baseUrl: string): string {
  * Parse a model response that may contain Markdown code fences or
  * explanatory text around a JSON object.
  */
-function parseModelJson(content: string): unknown {
-  const cleaned = content
-    .trim()
-    .replace(/^```(?:json)?\s*/i, "")
-    .replace(/\s*```$/i, "")
-    .trim();
 
-  try {
-    return JSON.parse(cleaned);
-  } catch {
-    const start = cleaned.indexOf("{");
-    const end = cleaned.lastIndexOf("}");
+// function parseModelJson(content: string): unknown {
+//   const cleaned = content
+//     .trim()
+//     .replace(/^```(?:json)?\s*/i, "")
+//     .replace(/\s*```$/i, "")
+//     .trim();
 
-    if (start < 0 || end <= start) {
-      throw new Error("Model response contains no JSON object.");
-    }
+//   try {
+//     return JSON.parse(cleaned);
+//   } catch {
+//     const start = cleaned.indexOf("{");
+//     const end = cleaned.lastIndexOf("}");
 
-    return JSON.parse(cleaned.slice(start, end + 1));
-  }
-}
+//     if (start < 0 || end <= start) {
+//       throw new Error("Model response contains no JSON object.");
+//     }
+
+//     return JSON.parse(cleaned.slice(start, end + 1));
+//   }
+// }
 
 
 function repairModelJson(content: string): string {
@@ -744,7 +745,7 @@ feasibility: {
 
 function makeFallbackItinerary(_preferences: Preferences): never {
   throw new Error(
-    "AI itinerary generation failed. Please check the AI provider configuration and try again. No generic itinerary was substituted.",
+    `AI itinerary generation failed. Please check the AI provider configuration and try again. No generic itinerary was substituted.${_preferences}`,
   );
 }
 
@@ -1121,10 +1122,10 @@ try {
       contentEnd: assistantContent.slice(-1000),
     });
 
-    throw new Error(
-      "AI returned malformed JSON. Check the logged parse errors " +
-      "and whether the provider truncated the response.",
-    );
+    // throw new Error(
+    //   "AI returned malformed JSON. Check the logged parse errors " +
+    //   "and whether the provider truncated the response.",
+    // );
   }
 }
 
@@ -1521,7 +1522,7 @@ if (action === "submit-enquiry") {
     });
   }
 
-  const preferences = normalizePreferences(body.preferences);
+  // const preferences = normalizePreferences(body.preferences);
   const contact = asObject(body.contact);
 
   const name = asString(contact.name);

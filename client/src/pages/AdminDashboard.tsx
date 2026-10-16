@@ -202,6 +202,21 @@ export default function AdminDashboard() {
             >
               View ERP <ChevronRight size={13} className="inline" />
             </Link>
+             <Link
+              href="/admin/knowledge-base"
+              className="text-[12px] font-bold text-[#c94d1c] hover:text-[#f26b35]"
+            >
+              Knowledge Base <ChevronRight size={13} className="inline" />
+            </Link>
+           {user?.permissions?.includes("reports.read") && (
+  <Link
+    href="/admin/recommendation-analytics"
+    className="mt-2 flex items-center gap-3 rounded-lg px-3 py-3 text-[12px] font-semibold text-white/70 transition hover:bg-white/5 hover:text-white"
+  >
+    <BarChart3 size={16} />
+    Engagement analytics
+  </Link>
+)}
             <Link
               href="/"
               className="text-[12px] font-bold text-[#c94d1c] hover:text-[#f26b35]"

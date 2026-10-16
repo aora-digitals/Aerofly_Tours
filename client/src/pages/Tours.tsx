@@ -6,6 +6,8 @@ import Footer from "@/components/site/Footer";
 import TourCard from "@/components/site/TourCard";
 import { trpc } from "@/lib/trpc";
 import { usePageMeta } from "../hooks/usePageMeta";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { recordCustomerActivity } from "@/lib/customer";
 
 export default function Tours() {
   usePageMeta({
@@ -15,6 +17,7 @@ export default function Tours() {
   });
  
   const initial = useMemo(() => new URLSearchParams(window.location.search), []);
+  const { user } = useAuth();
   const [search, setSearch] = useState(initial.get("search") ?? "");
   const [kind, setKind] = useState<"all" | "domestic" | "international">((initial.get("kind") as any) ?? "all");
   const [category, setCategory] = useState(initial.get("category") ?? "");
@@ -52,8 +55,27 @@ export default function Tours() {
 
   return <div className="min-h-screen"><Header /><main>
     <section className="border-b border-[#e8e4dd] bg-[#f3ede5] py-16"><div className="container"><div className="eyebrow">The AeroFly collection</div><h1 className="display mt-4 max-w-[680px] text-5xl font-extrabold sm:text-7xl">Find the route<br /><span className="text-[#f26b35]">that fits.</span></h1><p className="mt-5 max-w-[560px] text-[15px] leading-7 text-[#6f6c66]">Browse thoughtfully paced domestic and international journeys. Filter by the details that actually matter.</p>
-      <div className="mt-8 grid gap-3 rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(29,25,20,.08)] lg:grid-cols-[1.7fr_1fr_1fr_auto]"><label className="sr-only" htmlFor="tour-search">Search tours</label><div className="relative"><Search size={17} className="absolute left-4 top-3.5 text-[#908b83]" /><input id="tour-search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="field pl-11" placeholder="Search Dubai, Kerala, family…" /></div><select className="field" value={kind} onChange={(e) => { setKind(e.target.value as any); setPage(1); }}><option value="all">All destinations</option><option value="domestic">Domestic</option><option value="international">International</option></select><select className="field" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="">All travel styles</option>{categories?.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select><button className="btn btn-dark" onClick={() => setPage(1)}><Search size={15} /> Find journeys</button></div>
-    </div></section>
+      <div className="mt-8 grid gap-3 rounded-2xl bg-white p-3 shadow-[0_18px_45px_rgba(29,25,20,.08)] lg:grid-cols-[1.7fr_1fr_1fr_auto]"><label className="sr-only" htmlFor="tour-search">Search tours</label><div className="relative"><Search size={17} className="absolute left-4 top-3.5 text-[#908b83]" /><input id="tour-search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} className="field pl-11" placeholder="Search Dubai, Kerala, family…" /></div><select className="field" value={kind} onChange={(e) => { setKind(e.target.value as any); setPage(1); }}><option value="all">All destinations</option><option value="domestic">Domestic</option><option value="international">International</option></select><select className="field" value={category} onChange={(e) => { setCategory(e.target.value); setPage(1); }}><option value="">All travel styles</option>{categories?.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}</select>
+      <button className="btn btn-dark"
+       onClick={() => {
+    setPage(1);
+
+    if (user?.id && search.trim()) {
+      void recordCustomerActivity(
+        user.id,
+        "tour_search",
+        null,
+        null,
+        { source: "catalogue_search" },
+      ).catch(() => undefined);
+    }
+  }}
+       >
+        <Search size={15} /> Find journeys
+        </button>
+        </div>
+    </div>
+    </section>
 
     <section className="section"><div className="container grid gap-8 lg:grid-cols-[260px_1fr]">
       <aside className="card h-fit p-5 lg:sticky lg:top-24"><div className="flex items-center justify-between"><div className="flex items-center gap-2 font-['Manrope'] font-extrabold"><SlidersHorizontal size={16} /> Filters</div><button onClick={reset} className="text-[11px] font-bold text-[#c94d1c]">Reset</button></div>

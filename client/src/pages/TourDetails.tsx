@@ -10,6 +10,7 @@ import { addToWishlist, isTourWishlisted, recordCustomerActivity, removeFromWish
 import { toast } from "sonner";
 import { useCurrency } from "@/contexts/CurrencyContext";
 import { usePageMeta } from "@/hooks/usePageMeta";
+import { rememberAnonymousTourView } from "@/lib/recommendations";
 
 export default function TourDetails() {
   const slug = window.location.pathname.split("/").filter(Boolean).pop() ?? "";
@@ -30,6 +31,7 @@ export default function TourDetails() {
       viewMutation.mutate({ tourId: tour.id });
     }
     if (user?.id) {
+      rememberAnonymousTourView(Number(tour.id));
       void recordCustomerActivity(user.id, "tour_viewed", "tour", tour.id, { source: "tour_detail" }).catch(() => undefined);
       void isTourWishlisted(user.id, tour.id).then(setWishlisted).catch(() => undefined);
     }

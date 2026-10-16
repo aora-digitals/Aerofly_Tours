@@ -8,7 +8,11 @@ export type CustomerActivityType =
   | "enquiry_started"
   | "enquiry_submitted"
   | "appointment_requested"
-  | "callback_requested";
+  | "callback_requested"
+  | "tour_search"
+  | "recommendation_clicked"
+  | "recommendation_dismissed"
+  | "proposal_accepted";
 
 export type CustomerPreferences = {
   user_id: string;

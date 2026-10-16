@@ -5,7 +5,6 @@ import {
   ChevronDown,
   Loader2,
   MapPinned,
-  MessageCircle,
   Plane,
   RotateCcw,
   Send,
@@ -136,7 +135,7 @@ export default function FloatingTravelConcierge() {
       })
       .sort((a, b) => b.score - a.score)
       .slice(0, 5)
-      .map(({ score: _score, ...tour }) => tour);
+      .map(({ ...tour }) => tour);
   }
 
   async function getAIErrorMessage(error: unknown): Promise<string> {
