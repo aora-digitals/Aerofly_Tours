@@ -10,6 +10,7 @@ import {
   scoreTours,
   trackRecommendationEvent,
 } from "@/lib/recommendations";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 // import AIConversationHistory from "@/components/site/AIConversationHistory";
 // import AITravelDiscoveryPanel from "@/components/site/AITravelDiscoveryPanel";
@@ -57,6 +58,8 @@ export default function AITripConcierge() {
         "Welcome to the AeroFly travel desk! Tell me your destination, budget, trip duration, or preferred travel style. I'll help you explore our published tours and identify the next step.",
     },
   ]);
+
+  const { language } = useLanguage();
 
   const personalizeTours = async (
   candidates: TourResult[],
@@ -189,23 +192,30 @@ export default function AITripConcierge() {
     setMessage("");
     setBusy(true);
 
-    try {
-      const { data, error } = await supabase.functions.invoke<AIResponse>(
-        "ai-travel",
-        {
-          body: {
-            message: trimmed,
-            history: previousMessages,
-            conversationId,
-          },
-        },
-      );
+    
+try {
+  const localizedMessage =
+    language === "mr"
+      ? `मराठीत उत्तर द्या. सहलींची नावे, किंमती, तारखा आणि अधिकृत प्रवासविषयक माहिती अचूक ठेवा. मंजूर ज्ञानस्रोतांचा वापर करा आणि तथ्ये स्वतःहून तयार करू नका.\n\nग्राहकाची विनंती: ${trimmed}`
+      : trimmed;
 
-      if (error || !data || typeof data.reply !== "string") {
-        throw new Error(error?.message ?? "AI response unavailable");
-      }
+  const { data, error } = await supabase.functions.invoke<AIResponse>(
+    "ai-travel",
+    {
+      body: {
+        message: localizedMessage,
+        language,
+        history: previousMessages,
+        conversationId,
+      },
+    },
+  );
 
-      setConversationId(data.conversationId ?? conversationId);
+  if (error || !data || typeof data.reply !== "string") {
+    throw new Error(error?.message ?? "AI response unavailable");
+  }
+
+  setConversationId(data.conversationId ?? conversationId);
 
       let responseTours: TourResult[] = Array.isArray(data.tours)
   ? data.tours

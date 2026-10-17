@@ -24,6 +24,7 @@ import Reveal from "@/components/site/Reveal";
 import { trpc } from "@/lib/trpc";
 import { usePageMeta } from "../hooks/usePageMeta";
 import PersonalizedTourRecommendations from "@/components/site/PersonalizedTourRecommendations";
+// import { useLanguage } from "@/contexts/LanguageContext";
 // import AIExplorer from "@/components/site/AIExplorer";
  
 const heroImage = "https://images.unsplash.com/photo-1542296332-2e4473faf563?auto=format&fit=crop&w=1800&q=82";
@@ -61,6 +62,7 @@ export default function Home() {
   const destinations = data?.destinations?.filter((item) => item.featured).slice(0, 4) ?? [];
   const services = data?.services ?? [];
   const blogs = data?.blogs ?? [];
+  // const { language } = useLanguage();
 
   return (
     <div className="min-h-screen bg-[#fbfaf8]">

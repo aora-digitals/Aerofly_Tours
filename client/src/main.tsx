@@ -10,6 +10,7 @@ import {
 } from "@trpc/client";
 import { createRoot } from "react-dom/client";
 import superjson from "superjson";
+import "leaflet/dist/leaflet.css";
 
 import App from "./App";
 import { supabase } from "./lib/supabase";

@@ -16,6 +16,9 @@ import {
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
 import { supabase } from "@/lib/supabase";
+import TravelMap, {
+  type MapPoint,
+} from "@/components/site/TravelMap";
 
 type Destination = {
   id: number;
@@ -721,6 +724,44 @@ export default function DemoTripExplorer() {
                 </button>
               )}
             </div>
+
+            {itineraryState === "ready" &&
+  itinerary.length > 0 && (
+    <div className="mb-6">
+      <TravelMap
+        title={`${selectedTour.title} — itinerary map`}
+        points={itinerary.map(
+          (day): MapPoint => ({
+            id: day.id,
+            name:
+              day.location?.trim() ||
+              day.title ||
+              `Day ${day.dayNumber}`,
+            lat: day.latitude,
+            lng: day.longitude,
+            type: "itinerary",
+            description: day.description,
+            imageUrl: day.image_url,
+            day: day.dayNumber,
+            source:
+              day.latitude != null &&
+              day.longitude != null
+                ? "Published itinerary coordinates"
+                : null,
+          }),
+        )}
+        showRoute={
+          itinerary.filter(
+            (day) =>
+              day.latitude != null &&
+              day.longitude != null,
+          ).length > 1
+        }
+        showStreetView
+        height={400}
+      />
+    </div>
+  )}
 
             {itineraryState === "loading" && (
               <LoadingMessage label="Loading itinerary and travel images…" />

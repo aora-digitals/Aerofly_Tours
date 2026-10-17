@@ -2,6 +2,7 @@ import { getDb } from "./db";
 
 type TourListInput = {
   search?: string;
+  language?: "en" | "mr" | "hi";
   kind?: "domestic" | "international";
   category?: string;
   destination?: string;
@@ -33,6 +34,10 @@ function mapTour(row: any) {
     durationNights: row.durationNights,
     priceFrom: row.priceFrom,
     originalPrice: row.originalPrice,
+    tourKind: row.tour_kind ?? destination?.kind ?? "domestic",
+baseCurrency: row.base_currency ?? "INR",
+translations: row.translations ?? {},
+translationStatus: row.translation_status ?? {},
     rating: row.rating,
     reviewCount: row.reviewCount,
     overview: row.overview,
@@ -62,10 +67,12 @@ function mapTour(row: any) {
   };
 }
 
+
 export async function listPublicTours(input: TourListInput = {}) {
   const db = getDb();
   const pageSize = Math.min(Math.max(input.pageSize ?? 12, 1), 48);
   const page = Math.max(input.page ?? 1, 1);
+  const sort = input.sort ?? "featured";
 
   let query = db
     .from("tours")
@@ -87,6 +94,10 @@ export async function listPublicTours(input: TourListInput = {}) {
         "imageUrl",
         "galleryUrls",
         tags,
+        tour_kind,
+        base_currency,
+        translations,
+        translation_status,
         availability,
         status,
         featured,
@@ -101,88 +112,201 @@ export async function listPublicTours(input: TourListInput = {}) {
     )
     .eq("status", "published");
 
-  if (input.kind) query = query.eq("destinations.kind", input.kind);
-  if (input.category) query = query.eq("tour_categories.slug", input.category);
-  if (input.destination) query = query.eq("destinations.slug", input.destination);
-  if (input.minPrice !== undefined) query = query.gte("priceFrom", input.minPrice);
-  if (input.maxPrice !== undefined) query = query.lte("priceFrom", input.maxPrice);
-  if (input.minDuration !== undefined) query = query.gte("durationDays", input.minDuration);
-  if (input.maxDuration !== undefined) query = query.lte("durationDays", input.maxDuration);
-  if (input.travelType) query = query.contains("tags", [input.travelType]);
+  // Apply filters BEFORE sorting, pagination, and execution.
+  if (input.kind) {
+    query = query.eq("tour_kind", input.kind);
+  }
 
+  if (input.category) {
+    query = query.eq("tour_categories.slug", input.category);
+  }
+
+  if (input.destination) {
+    query = query.eq("destinations.slug", input.destination);
+  }
+
+  if (input.minPrice !== undefined) {
+    query = query.gte("priceFrom", input.minPrice);
+  }
+
+  if (input.maxPrice !== undefined) {
+    query = query.lte("priceFrom", input.maxPrice);
+  }
+
+  if (input.minDuration !== undefined) {
+    query = query.gte("durationDays", input.minDuration);
+  }
+
+  if (input.maxDuration !== undefined) {
+    query = query.lte("durationDays", input.maxDuration);
+  }
+
+  if (input.travelType) {
+    query = query.contains("tags", [input.travelType]);
+  }
+
+  // Search tours and destination names.
   if (input.search?.trim()) {
     const term = input.search.trim();
     const pattern = `%${term.replace(/[%_]/g, "\\$&")}%`;
 
-    const [{ data: directMatches, error: directError }, { data: destinationMatches, error: destinationError }] = await Promise.all([
+    const [
+      { data: directMatches, error: directError },
+      { data: destinationMatches, error: destinationError },
+    ] = await Promise.all([
       db
         .from("tours")
         .select("id")
         .eq("status", "published")
         .or(`title.ilike.${pattern},overview.ilike.${pattern}`),
+
       db
         .from("destinations")
         .select("id")
-        .or(`name.ilike.${pattern},country.ilike.${pattern},region.ilike.${pattern}`),
+        .or(
+          `name.ilike.${pattern},country.ilike.${pattern},region.ilike.${pattern}`,
+        ),
     ]);
 
     if (directError) fail(directError);
     if (destinationError) fail(destinationError);
 
-    const destinationIds = (destinationMatches ?? []).map((row: any) => row.id);
+    const destinationIds = (destinationMatches ?? []).map(
+      (row: { id: number }) => row.id,
+    );
+
     let destinationTourIds: number[] = [];
 
-    if (destinationIds.length) {
+    if (destinationIds.length > 0) {
       const { data, error } = await db
         .from("tours")
         .select("id")
         .eq("status", "published")
         .in("destinationId", destinationIds);
+
       if (error) fail(error);
-      destinationTourIds = (data ?? []).map((row: any) => row.id);
+
+      destinationTourIds = (data ?? []).map(
+        (row: { id: number }) => row.id,
+      );
     }
 
-   const ids = Array.from(
-  new Set([
-    ...(directMatches ?? []).map((row: any) => row.id),
-    ...destinationTourIds,
-  ])
-);
+    const ids = Array.from(
+      new Set([
+        ...(directMatches ?? []).map((row: { id: number }) => row.id),
+        ...destinationTourIds,
+      ]),
+    );
 
-    if (!ids.length) return { items: [], page, pageSize, total: 0, totalPages: 0 };
+    if (ids.length === 0) {
+      return {
+        items: [],
+        page,
+        pageSize,
+        total: 0,
+        totalPages: 0,
+      };
+    }
+
     query = query.in("id", ids);
   }
 
-  const sort = input.sort ?? "featured";
-  if (sort === "price_asc") query = query.order("priceFrom", { ascending: true });
-  else if (sort === "price_desc") query = query.order("priceFrom", { ascending: false });
-  else if (sort === "duration") query = query.order("durationDays", { ascending: true });
-  else if (sort === "rating") query = query.order("rating", { ascending: false });
-  else if (sort === "newest") query = query.order("createdAt", { ascending: false });
-  else query = query.order("featured", { ascending: false }).order("createdAt", { ascending: false });
+  const metricSort =
+    sort === "popular" || sort === "most_enquired";
 
-  // Popularity sorts are handled after retrieving a bounded candidate set.
-  const metricSort = sort === "popular" || sort === "most_enquired";
-  if (metricSort) {
-    query = query.range(0, Math.min(page * pageSize * 4, 199));
-  } else {
-    const from = (page - 1) * pageSize;
-    query = query.range(from, from + pageSize - 1);
-  }
+  const orderedQuery =
+    sort === "price_asc"
+      ? query.order("priceFrom", { ascending: true })
+      : sort === "price_desc"
+        ? query.order("priceFrom", { ascending: false })
+        : sort === "duration"
+          ? query.order("durationDays", { ascending: true })
+          : sort === "rating"
+            ? query.order("rating", { ascending: false })
+            : sort === "newest"
+              ? query.order("createdAt", { ascending: false })
+              : metricSort
+                ? query.order("createdAt", { ascending: false })
+                : query
+                    .order("featured", { ascending: false })
+                    .order("createdAt", { ascending: false });
 
-  const { data, error, count } = await query;
+  // Fetch a bounded candidate set for metric-based sorting.
+  const start = metricSort ? 0 : (page - 1) * pageSize;
+  const end = metricSort
+    ? Math.min(page * pageSize * 4, 199)
+    : start + pageSize - 1;
+
+  const { data, error, count } = await orderedQuery.range(start, end);
+
   if (error) fail(error);
 
   let items = (data ?? []).map(mapTour);
-  if (sort === "popular") items.sort((a, b) => b.metrics.views - a.metrics.views);
-  if (sort === "most_enquired") items.sort((a, b) => b.metrics.enquiries - a.metrics.enquiries);
 
-  if (metricSort) {
-    const from = (page - 1) * pageSize;
-    items = items.slice(from, from + pageSize);
+  if (sort === "popular") {
+    items.sort(
+      (a, b) => b.metrics.views - a.metrics.views,
+    );
   }
 
-  const total = count ?? items.length;
+  if (sort === "most_enquired") {
+    items.sort(
+      (a, b) => b.metrics.enquiries - a.metrics.enquiries,
+    );
+  }
+
+  if (metricSort) {
+    const offset = (page - 1) * pageSize;
+    items = items.slice(offset, offset + pageSize);
+  }
+
+  // Apply published translations to the final result page.
+  if (input.language && input.language !== "en" && items.length > 0) {
+    const { data: localizedRows, error: localizedError } = await db
+      .from("content_translations")
+      .select(
+        "entity_id,field_key,translated_value,requires_approval,reviewed_at",
+      )
+      .eq("entity_type", "tour")
+      .eq("language_code", input.language)
+      .eq("review_status", "published")
+      .in("entity_id", items.map((item: { id: number }) => String(item.id)));
+
+    if (localizedError) fail(localizedError);
+
+    const localized = new Map<string, Record<string, string>>();
+
+    for (const row of localizedRows ?? []) {
+      if (row.requires_approval && !row.reviewed_at) continue;
+      if (!row.translated_value?.trim()) continue;
+
+      const fields = localized.get(row.entity_id) ?? {};
+      fields[row.field_key] = row.translated_value;
+      localized.set(row.entity_id, fields);
+    }
+
+    items = items.map((item) => {
+      const fields = localized.get(String(item.id)) ?? {};
+
+      return {
+        ...item,
+        title: fields.title ?? item.title,
+        overview: fields.overview ?? item.overview,
+        highlights: fields.highlights
+          ? fields.highlights.split("\n").filter(Boolean)
+          : item.highlights,
+        inclusions: fields.inclusions
+          ? fields.inclusions.split("\n").filter(Boolean)
+          : item.inclusions,
+        exclusions: fields.exclusions
+          ? fields.exclusions.split("\n").filter(Boolean)
+          : item.exclusions,
+      };
+    });
+  }
+
+  const total = count ?? 0;
+
   return {
     items,
     page,
@@ -191,6 +315,7 @@ export async function listPublicTours(input: TourListInput = {}) {
     totalPages: Math.ceil(total / pageSize),
   };
 }
+
 
 export async function getPublicTourBySlug(slug: string) {
   const db = getDb();
@@ -302,8 +427,13 @@ export async function listPublicDestinations(input: {
   return data ?? [];
 }
 
-export async function getPublicDestinationBySlug(slug: string) {
+
+export async function getPublicDestinationBySlug(
+  slug: string,
+  language: "en" | "mr" | "hi" = "en",
+) {
   const db = getDb();
+
   const { data: destination, error } = await db
     .from("destinations")
     .select("*")
@@ -315,18 +445,71 @@ export async function getPublicDestinationBySlug(slug: string) {
   if (!destination) return undefined;
 
   const [tours, attractions] = await Promise.all([
-    listPublicTours({ destination: slug, page: 1, pageSize: 12, sort: "featured" }),
-    db.from("destination_attractions").select("*").eq("destinationId", destination.id).eq("is_public", true).order("sort_order", { ascending: true }),
+    listPublicTours({
+      destination: slug,
+      page: 1,
+      pageSize: 12,
+      sort: "featured",
+      language,
+    }),
+    db
+      .from("destination_attractions")
+      .select("*")
+      .eq("destinationId", destination.id)
+      .eq("is_public", true)
+      .order("sort_order", { ascending: true }),
   ]);
 
   if (attractions.error) fail(attractions.error);
 
+  let translatedDestination = destination;
+
+  if (language !== "en") {
+    const { data: translations, error: translationError } = await db
+      .from("content_translations")
+      .select(
+        "field_key, translated_value, review_status, requires_approval, reviewed_at",
+      )
+      .eq("entity_type", "destination")
+      .eq("entity_id", String(destination.id))
+      .eq("language_code", language)
+      .eq("review_status", "published")
+      .in("field_key", ["name", "tagline", "description"]);
+
+    if (translationError) fail(translationError);
+
+    const publishedFields: Record<string, string> = {};
+
+    for (const item of translations ?? []) {
+      if (
+        !item.translated_value?.trim() ||
+        (item.requires_approval && !item.reviewed_at)
+      ) {
+        continue;
+      }
+
+      publishedFields[item.field_key] = item.translated_value;
+    }
+
+    translatedDestination = {
+      ...destination,
+      ...(publishedFields.name ? { name: publishedFields.name } : {}),
+      ...(publishedFields.tagline
+        ? { tagline: publishedFields.tagline }
+        : {}),
+      ...(publishedFields.description
+        ? { description: publishedFields.description }
+        : {}),
+    };
+  }
+
   return {
-    ...destination,
+    ...translatedDestination,
     tours: tours.items,
     attractions: attractions.data ?? [],
   };
 }
+
 
 export async function listPublicCategories() {
   const db = getDb();
@@ -362,7 +545,7 @@ export async function getPublicServiceBySlug(slug: string) {
   return data ?? undefined;
 }
 
-export async function getPublicHomepage() {
+export async function getPublicHomepage(language: "en" | "mr" | "hi" = "en") {
   const [catalogue, destinations, categories, services] = await Promise.all([
     listPublicTours({ page: 1, pageSize: 48, sort: "newest" }),
     listPublicDestinations({}),
@@ -389,6 +572,7 @@ export async function getPublicHomepage() {
     budgetTours: all.filter((tour) => Number(tour.priceFrom) < 50000).slice(0, 6),
     destinations,
     categories,
+    language,
     services,
     recommendations: [],
   };

@@ -6,6 +6,8 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { AuthProvider } from "./contexts/AuthContext";
 import { CurrencyProvider } from "./contexts/CurrencyContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
+import { LanguageProvider } from "./contexts/LanguageContext";
+import AdminLocalizationSettings from "./pages/AdminLocalizationSettings";
 
 import Home from "./pages/Home";
 import Tours from "./pages/Tours";
@@ -39,6 +41,9 @@ import FloatingTravelConcierge from "./components/site/FloatingTravelConcierge";
 import KnowledgeBaseManager from "./components/admin/KnowledgeBaseManager";
 import CustomerPreferences from "./pages/CustomerPreferences";
 import RecommendationAnalytics from "./pages/RecommendationAnalytics";
+import AdminMapLocations from "./pages/AdminMapLocations";
+
+
 
 import ProtectedRoute from "./components/auth/ProtectedRoute";
 
@@ -145,6 +150,18 @@ function Router() {
         </ProtectedRoute>
       </Route>
 
+<Route path="/admin/localization">
+  <ProtectedRoute requiredStaff>
+    <AdminLocalizationSettings />
+  </ProtectedRoute>
+</Route>
+
+<Route path="/admin/map-locations">
+  <ProtectedRoute requiredStaff>
+    <AdminMapLocations />
+  </ProtectedRoute>
+</Route>
+
 <Route path="/admin/recommendation-analytics">
   <ProtectedRoute
     requiredStaff
@@ -215,6 +232,7 @@ export default function App() {
     <ErrorBoundary>
       <ThemeProvider defaultTheme="light">
         <AuthProvider>
+          <LanguageProvider>
           <CurrencyProvider>
             <TooltipProvider>
               <Toaster />
@@ -222,6 +240,7 @@ export default function App() {
                <FloatingTravelConcierge />
             </TooltipProvider>
           </CurrencyProvider>
+          </LanguageProvider>
         </AuthProvider>
       </ThemeProvider>
     </ErrorBoundary>

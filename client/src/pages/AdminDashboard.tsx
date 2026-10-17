@@ -10,6 +10,7 @@ import {
   FileText,
   LayoutDashboard,
   LogOut,
+  MapPin,
   Megaphone,
   MessageCircle,
   ShieldCheck,
@@ -215,6 +216,27 @@ export default function AdminDashboard() {
   >
     <BarChart3 size={16} />
     Engagement analytics
+  </Link>
+)}
+
+{(
+  user?.permissions?.includes("tours.manage") ||
+  user?.permissions?.includes("knowledge.manage") ||
+  user?.permissions?.includes("settings.manage")
+) && (
+  <Link href="/admin/localization">
+    Languages, translations & currencies
+  </Link>
+)}
+
+{(user?.permissions?.includes("settings.manage") ||
+  user?.permissions?.includes("tours.manage")) && (
+  <Link
+    href="/admin/map-locations"
+    className="flex items-center gap-3 rounded-lg px-3 py-3 text-[12px] font-semibold text-white/70 transition hover:bg-white/5 hover:text-white"
+  >
+    <MapPin size={16} />
+    Map locations
   </Link>
 )}
             <Link

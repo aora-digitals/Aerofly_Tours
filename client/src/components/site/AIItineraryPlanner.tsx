@@ -3,10 +3,14 @@ import {
   ArrowLeft,
   Check,Loader2, Pencil, Plus, Save, Sparkles, Trash2,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { Link } from "wouter";
 import { toast } from "sonner";
+import { useLanguage } from "@/contexts/LanguageContext";
+import TravelMap, {
+  type MapPoint,
+} from "@/components/site/TravelMap";
 
 type Preferences = {
   origin: string;
@@ -158,6 +162,10 @@ const [editingActivity, setEditingActivity] = useState<{
   activityIndex: number;
 } | null>(null);
 
+
+const { language } = useLanguage();
+
+
 const [activityDraft, setActivityDraft] = useState<Activity | null>(null);
 
 
@@ -169,6 +177,102 @@ type ActivityEditorState = {
 
 const [activityEditor, setActivityEditor] =
   useState<ActivityEditorState | null>(null);
+
+  const [verifiedMapDestinations, setVerifiedMapDestinations] =
+  useState<
+    Array<{
+      id: number;
+      name: string;
+      country: string;
+      latitude: number | null;
+      longitude: number | null;
+      map_visible: boolean;
+    }>
+  >([]);
+
+useEffect(() => {
+  let active = true;
+
+  void supabase
+    .from("destinations")
+    .select(
+      "id,name,country,latitude,longitude,map_visible,is_active",
+    )
+    .eq("is_active", true)
+    .limit(300)
+    .then(({ data, error }) => {
+      if (!active || error) return;
+
+      setVerifiedMapDestinations(
+        (data ?? [])
+          .filter((item: any) => item.map_visible !== false)
+          .map((item: any) => ({
+            id: Number(item.id),
+            name: String(item.name),
+            country: String(item.country ?? ""),
+            latitude:
+              item.latitude == null
+                ? null
+                : Number(item.latitude),
+            longitude:
+              item.longitude == null
+                ? null
+                : Number(item.longitude),
+            map_visible: item.map_visible !== false,
+          })),
+      );
+    });
+
+  return () => {
+    active = false;
+  };
+}, []);
+
+const itineraryMapPoints: MapPoint[] = useMemo(() => {
+  if (!itinerary) return [];
+
+  const used = new Set<number>();
+  const result: MapPoint[] = [];
+
+  itinerary.days.forEach((day, index) => {
+    const wanted = String(day.destination ?? "")
+      .trim()
+      .toLocaleLowerCase();
+
+    if (!wanted) return;
+
+    const match = verifiedMapDestinations.find(
+      (item) =>
+        item.map_visible &&
+        item.latitude != null &&
+        item.longitude != null &&
+        (
+          item.name.trim().toLocaleLowerCase() === wanted ||
+          `${item.name}, ${item.country}`
+            .trim()
+            .toLocaleLowerCase() === wanted
+        ),
+    );
+
+    if (!match || used.has(match.id)) return;
+
+    used.add(match.id);
+
+    result.push({
+      id: `${match.id}-${index + 1}`,
+      name: match.name,
+      lat: match.latitude,
+      lng: match.longitude,
+      type: "itinerary",
+      day: day.dayNumber ?? index + 1,
+      country: match.country,
+      description: day.title,
+      source: "Verified AeroFly destination coordinates",
+    });
+  });
+
+  return result;
+}, [itinerary, verifiedMapDestinations]);
 
 const startAddActivity = (dayIndex: number, day: Day) => {
   setActivityEditor({
@@ -501,6 +605,7 @@ async function generate() {
     }>("generate", {
       preferences: {
         ...preferences,
+        language,
         durationDays,
         durationNights: durationDays - 1,
       },
@@ -1706,6 +1811,23 @@ const durationNights = durationDays > 0 ? durationDays - 1 : 0;
       </section>
 
       {/* Complete generated itinerary */}
+      {itineraryMapPoints.length > 0 && (
+  <section className="mt-5">
+    <TravelMap
+      title="Your itinerary on the map"
+      points={itineraryMapPoints}
+      showRoute={itineraryMapPoints.length > 1}
+      showStreetView
+      height={400}
+    />
+
+    <p className="mt-2 text-xs text-[#77736c]">
+      Only destination names matching verified AeroFly
+      location records are plotted. Suggested activity names
+      without verified coordinates are not placed on the map.
+    </p>
+  </section>
+)}
       
 
 {/* Complete generated itinerary */}

@@ -76,80 +76,132 @@
 
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef } from "react";
-import { usePersistFn } from "@/hooks/usePersistFn";
+
+import { useCallback, useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import { cn } from "@/lib/utils";
 
-declare global {
-  interface Window {
-    google?: typeof google;
-  }
-}
-
-const API_KEY = import.meta.env.VITE_FRONTEND_FORGE_API_KEY;
-const FORGE_BASE_URL =
-  import.meta.env.VITE_FRONTEND_FORGE_API_URL ||
-  "https://forge.butterfly-effect.dev";
-const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
-
-function loadMapScript() {
-  return new Promise(resolve => {
-    const script = document.createElement("script");
-    script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
-    script.async = true;
-    script.crossOrigin = "anonymous";
-    script.onload = () => {
-      resolve(null);
-      script.remove(); // Clean up immediately
-    };
-    script.onerror = () => {
-      console.error("Failed to load Google Maps script");
-    };
-    document.head.appendChild(script);
-  });
-}
-
-interface MapViewProps {
+export interface MapViewProps {
   className?: string;
-  initialCenter?: google.maps.LatLngLiteral;
+  initialCenter?: {
+    lat: number;
+    lng: number;
+  };
   initialZoom?: number;
-  onMapReady?: (map: google.maps.Map) => void;
+  onMapReady?: (map: L.Map) => void;
+  height?: number;
+}
+
+interface MapInitializerProps {
+  initialCenter: L.LatLngExpression;
+  initialZoom: number;
+  onMapReady?: (map: L.Map) => void;
+}
+
+function MapInitializer({
+  initialCenter,
+  initialZoom,
+  onMapReady,
+}: MapInitializerProps) {
+  const map = useMap();
+  const callbackRef = useRef(onMapReady);
+
+  useEffect(() => {
+    callbackRef.current = onMapReady;
+  }, [onMapReady]);
+
+  useEffect(() => {
+    map.setView(initialCenter, initialZoom);
+    callbackRef.current?.(map);
+  }, [map, initialCenter, initialZoom]);
+
+  return null;
 }
 
 export function MapView({
   className,
-  initialCenter = { lat: 37.7749, lng: -122.4194 },
-  initialZoom = 12,
+  initialCenter = {
+    lat: 20.5937,
+    lng: 78.9629,
+  },
+  initialZoom = 5,
   onMapReady,
+  height = 500,
 }: MapViewProps) {
-  const mapContainer = useRef<HTMLDivElement>(null);
-  const map = useRef<google.maps.Map | null>(null);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const mapRef = useRef<L.Map | null>(null);
 
-  const init = usePersistFn(async () => {
-    await loadMapScript();
-    if (!mapContainer.current) {
-      console.error("Map container not found");
-      return;
-    }
-    map.current = new window.google.maps.Map(mapContainer.current, {
-      zoom: initialZoom,
-      center: initialCenter,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      zoomControl: true,
-      streetViewControl: true,
-      mapId: "DEMO_MAP_ID",
-    });
-    if (onMapReady) {
-      onMapReady(map.current);
-    }
-  });
+  const handleMapReady = useCallback(
+    (map: L.Map) => {
+      mapRef.current = map;
+      setMapError(null);
+      onMapReady?.(map);
+    },
+    [onMapReady],
+  );
 
   useEffect(() => {
-    init();
-  }, [init]);
+    return () => {
+      mapRef.current = null;
+    };
+  }, []);
 
   return (
-    <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />
+    <div
+      className="relative w-full overflow-hidden rounded-lg"
+      style={{ height: `${height}px` }}
+    >
+      <div
+        className={cn("h-full w-full", className)}
+        aria-label="Interactive map"
+      >
+        <MapContainer
+          center={[initialCenter.lat, initialCenter.lng]}
+          zoom={initialZoom}
+          scrollWheelZoom
+          zoomControl
+          attributionControl
+          style={{ height: "100%", width: "100%" }}
+          whenReady={() => {
+            // Leaflet's map is initialized before this callback runs.
+            // MapInitializer supplies the actual map instance to the parent.
+          }}
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap</a> contributors'
+            url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+            maxZoom={19}
+            eventHandlers={{
+              tileerror: () => {
+                setMapError(
+                  "Some map tiles could not be loaded. Check your connection and try again.",
+                );
+              },
+              load: () => {
+                setMapError(null);
+              },
+            }}
+          />
+
+          <MapInitializer
+            initialCenter={[initialCenter.lat, initialCenter.lng]}
+            initialZoom={initialZoom}
+            onMapReady={handleMapReady}
+          />
+        </MapContainer>
+      </div>
+
+      {mapError && (
+        <div
+          role="status"
+          className="absolute bottom-3 left-3 right-3 z-[1000] rounded-md bg-white/95 p-3 text-sm text-[#77736c] shadow"
+        >
+          {mapError}
+        </div>
+      )}
+    </div>
   );
 }
+
+export default MapView;

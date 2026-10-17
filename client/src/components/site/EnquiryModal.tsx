@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { supabase } from "@/lib/supabase";
 import { recordCustomerActivity } from "@/lib/customer";
+import { useLanguage } from "@/contexts/LanguageContext";
 
 type Props = { open: boolean; onClose: () => void; tour?: { id?: number; title?: string; destination?: string } };
 export default function EnquiryModal({ open, onClose, tour }: Props) {
@@ -11,6 +12,7 @@ export default function EnquiryModal({ open, onClose, tour }: Props) {
   const [submitting, setSubmitting] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const { user } = useAuth();
+  const { language} = useLanguage();
   const [form, setForm] = useState({ name: "", email: "", phone: "", travelDates: "", travellers: "2", budget: "", message: "" });
   useEffect(() => { if (open && user?.id) void recordCustomerActivity(user.id, "enquiry_started", tour?.id ? "tour" : null, tour?.id ?? null).catch(() => undefined); }, [open, user?.id, tour?.id]);
   if (!open) return null;
@@ -30,19 +32,19 @@ const submit = async (event: React.FormEvent<HTMLFormElement>) => {
     const { data, error } = await supabase.functions.invoke(
       "ai-travel-request",
       {
-        body: {
-          type: "enquiry",
-          confirmed: true,
-          name: form.name,
-          email: form.email,
-          phone: form.phone,
-          destination: tour?.destination || "",
-          travelDates: form.travelDates,
-          budget: form.budget,
-          tripType: "",
-          message: form.message,
-          tourId: tour?.id ?? null,
-        },
+       body: {
+  type: "enquiry",
+  confirmed: true,
+  name: form.name.trim(),
+  email: form.email.trim(),
+  phone: form.phone.trim(),
+  destination: tour?.destination || "",
+  travelDates: form.travelDates,
+  budget: form.budget,
+  message: form.message,
+  tourId: tour?.id ?? null,
+  language,
+}
       },
     );
 

@@ -181,9 +181,15 @@ export const appRouter = router({
     }),
   }),
   content: router({
-    home: publicProcedure.query(async () => {
+    home: publicProcedure
+  .input(
+    z.object({
+      language: z.enum(["en", "mr", "hi"]).optional(),
+    }).optional(),
+  )
+  .query(async ({ input }) => {
       const [catalogue, blogs, testimonials, settings] = await Promise.all([
-        getPublicHomepage(),
+        getPublicHomepage(input?.language ?? "en"),
         listBlogPosts(3),
         listTestimonials(),
         getSettings(),
@@ -200,6 +206,7 @@ export const appRouter = router({
       minDuration: z.number().int().positive().optional(),
       maxDuration: z.number().int().positive().optional(),
       travelType: z.string().optional(),
+      language: z.enum(["en", "mr", "hi"]).optional(),
       sort: z.enum(["featured", "newest", "price_asc", "price_desc", "duration", "rating", "popular", "most_enquired"]).optional(),
       page: z.number().int().positive().optional(),
       pageSize: z.number().int().min(1).max(48).optional(),
@@ -210,9 +217,10 @@ export const appRouter = router({
       search: z.string().optional(),
       kind: z.enum(["domestic", "international"]).optional(),
       region: z.string().optional(),
+      language: z.enum(["en", "mr", "hi"]).optional(),
       featured: z.boolean().optional(),
     }).optional()).query(({ input }) => listPublicDestinations(input ?? {})),
-    destination: publicProcedure.input(z.object({ slug: z.string().min(1) })).query(({ input }) => getPublicDestinationBySlug(input.slug)),
+    destination: publicProcedure.input(z.object({ slug: z.string().min(1),language: z.enum(["en", "mr", "hi"]).optional() })).query(({ input }) => getPublicDestinationBySlug(input.slug,input.language ?? "en",)),
     categories: publicProcedure.query(() => listPublicCategories()),
     services: publicProcedure.query(() => listPublicServices()),
     service: publicProcedure.input(z.object({ slug: z.string().min(1) })).query(({ input }) => getPublicServiceBySlug(input.slug)),
