@@ -37,4 +37,12 @@ export default tseslint.config(
       "@typescript-eslint/no-explicit-any": "warn",
     },
   },
+  {
+  files: ["tests/load/**/*.js"],
+  languageOptions: {
+    globals: {
+      __ENV: "readonly",
+    },
+  },
+},
 );

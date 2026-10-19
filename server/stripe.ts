@@ -37,8 +37,20 @@ export async function createCustomerCheckout(input: {
     throw new Error("This quotation is not available in your customer account");
   if (quote.status !== "accepted")
     throw new Error("Only an accepted quotation can be paid online");
-  if (quote.validUntil && quote.validUntil.getTime() < Date.now())
-    throw new Error("This quotation has expired");
+  if (quote.validUntil != null) {
+  const validUntilMs =
+    quote.validUntil instanceof Date
+      ? quote.validUntil.getTime()
+      : Date.parse(String(quote.validUntil));
+
+  if (!Number.isFinite(validUntilMs)) {
+    throw new Error("The quotation expiry date is invalid.");
+  }
+
+  if (validUntilMs < Date.now()) {
+    throw new Error("This quotation has expired.");
+  }
+}
   const baseAmountInr = Number(quote.total);
   if (!Number.isFinite(baseAmountInr) || baseAmountInr <= 0)
     throw new Error("The quotation amount is invalid");

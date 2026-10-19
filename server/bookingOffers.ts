@@ -9,6 +9,52 @@ function supabase(accessToken: string) {
   return createServerSupabaseClient(accessToken);
 }
 
+export async function createManualTourDeparture(
+  accessToken: string,
+  input: {
+    tourId: number;
+    departureDate: string;
+    returnDate?: string;
+    departureCity?: string;
+    adultPrice: number;
+    childPrice: number;
+    infantPrice: number;
+    singleSupplement: number;
+    capacity: number;
+  },
+): Promise<number> {
+  const db = supabase(accessToken);
+
+  const { data, error } = await db.rpc(
+    "staff_create_manual_tour_departure",
+    {
+      p_tour_id: input.tourId,
+      p_departure_date: input.departureDate,
+      p_return_date: input.returnDate || null,
+      p_departure_city: input.departureCity || null,
+      p_adult_price: input.adultPrice,
+      p_child_price: input.childPrice,
+      p_infant_price: input.infantPrice,
+      p_single_supplement: input.singleSupplement,
+      p_capacity: input.capacity,
+    },
+  );
+
+  if (error) {
+    throw new Error(
+      error.message || "Unable to create the manual departure.",
+    );
+  }
+
+  const departureId = Number(data);
+
+  if (!Number.isInteger(departureId) || departureId < 1) {
+    throw new Error("The database did not return a valid departure ID.");
+  }
+
+  return departureId;
+}
+
 export async function recordCrmEnquiry(
   accessToken: string,
   input: {
@@ -36,19 +82,94 @@ export async function recordCrmEnquiry(
 }
 
 /** Customer-facing list. RLS limits quotations/items to the signed-in customer. */
+
+/** Customer-facing list of offers, their immutable versions and event history. */
 export async function listMyBookingOffers(accessToken: string) {
   const db = supabase(accessToken);
+
+  const {
+    data: { user },
+    error: authError,
+  } = await db.auth.getUser();
+
+  if (authError || !user) {
+    throw new Error("A valid customer session is required.");
+  }
+
   const { data, error } = await db
     .from("quotations")
     .select(`
-      id,reference,enquiryId,destination,travelDates,travellers,subtotal,taxes,discount,total,currency,status,notes,validUntil,sentAt,acceptedAt,createdAt,bookingId,booking_details,customer_response,customer_response_note,response_at,offer_version,
-      items:quotation_items(id,description,quantity,unitPrice,lineTotal)
+      id,
+      reference,
+      enquiryId,
+      destination,
+      travelDates,
+      travellers,
+      subtotal,
+      taxes,
+      discount,
+      total,
+      currency,
+      status,
+      notes,
+      validUntil,
+      sentAt,
+      acceptedAt,
+      createdAt,
+      bookingId,
+      booking_details,
+      customer_response,
+      customer_response_note,
+      response_at,
+      offer_version,
+      items:quotation_items(
+        id,
+        description,
+        quantity,
+        unitPrice,
+        lineTotal
+      ),
+      versions:booking_offer_versions(
+        id,
+        version_number,
+        created_at,
+        snapshot
+      ),
+      events:booking_offer_events(
+        id,
+        action,
+        message,
+        actor_type,
+        created_at
+      )
     `)
-    .not("sentAt", "is", null)
+    .eq("customer_auth_id", user.id)
+    .in("status", [
+      "sent",
+      "viewed",
+      "accepted",
+      "expired",
+      "rejected",
+    ])
     .order("createdAt", { ascending: false });
-  if (error) fail(error, "Unable to load your booking offers.");
-  return data ?? [];
+
+  if (error) {
+    fail(error, "Unable to load your booking offers.");
+  }
+
+  return (data ?? []).map((offer) => ({
+    ...offer,
+    versions: [...(offer.versions ?? [])].sort(
+      (a, b) => b.version_number - a.version_number,
+    ),
+    events: [...(offer.events ?? [])].sort(
+      (a, b) =>
+        new Date(b.created_at).getTime() -
+        new Date(a.created_at).getTime(),
+    ),
+  }));
 }
+
 
 /** Staff issues a quote/offer only against an existing enquiry with a linked customer identity. */
 export async function issueBookingOffer(
@@ -226,4 +347,65 @@ export async function reviewBookingCancellation(
   }
 
   return data;
+}
+
+
+
+/**
+ * Staff CRM summary for the existing enquiry.
+ * This does not create or update enquiries or quotations.
+ */
+export async function getEnquiryOfferSummary(
+  accessToken: string,
+  enquiryId: number,
+) {
+  const db = supabase(accessToken);
+
+  if (!Number.isInteger(enquiryId) || enquiryId < 1) {
+    throw new Error("Select a valid enquiry.");
+  }
+
+  const { data, error } = await db
+    .from("quotations")
+    .select(`
+      id,
+      reference,
+      "enquiryId",
+      status,
+      proposal_status,
+      customer_response,
+      customer_response_note,
+      response_at,
+      offer_version,
+      "sentAt",
+      total,
+      currency,
+      "validUntil"
+    `)
+    .eq("enquiryId", enquiryId)
+    .order("offer_version", { ascending: false })
+    .order("id", { ascending: false });
+
+  if (error) {
+    fail(error, "Unable to load booking-offer history for this enquiry.");
+  }
+
+  const offers = data ?? [];
+
+  // Show one current quotation per enquiry in the CRM summary.
+  // Historical revisions are retained in booking_offer_versions.
+  const current = offers[0] ?? null;
+
+  return {
+    current,
+    history: offers,
+    hasChangeRequest:
+      current?.customer_response === "changes_requested" ||
+      current?.proposal_status === "EDIT_REQUESTED",
+    changeRequestMessage:
+      current?.customer_response === "changes_requested" ||
+      current?.proposal_status === "EDIT_REQUESTED"
+        ? current?.customer_response_note ?? null
+        : null,
+  };
 }

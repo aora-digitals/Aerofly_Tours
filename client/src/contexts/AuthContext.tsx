@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
   type ReactNode,
 } from "react";
 import type { Session, User } from "@supabase/supabase-js";
@@ -292,40 +293,67 @@ export function AuthProvider({
   const [error, setError] =
     useState<Error | null>(null);
 
-  const hydrateSession = useCallback(
-    async (nextSession: Session | null) => {
-      setSession(nextSession);
+  const currentUserRef = useRef<AppUser | null>(null);
 
-      if (!nextSession?.user) {
-        setUser(null);
-        setError(null);
-        setLoading(false);
-        return;
-      }
+  
+const hydrateSession = useCallback(
+  async (nextSession: Session | null) => {
+    setSession(nextSession);
 
-      setLoading(true);
+    if (!nextSession?.user) {
+      currentUserRef.current = null;
+      setUser(null);
       setError(null);
+      setLoading(false);
+      return;
+    }
 
-      try {
-        const appUser = await buildAppUser(
-          nextSession.user
-        );
+    const existingUser = currentUserRef.current;
+    const isSameUser = existingUser?.id === nextSession.user.id;
 
-        setUser(appUser);
-      } catch (loadError) {
-        const normalized =
-          loadError instanceof Error
-            ? loadError
-            : new Error("Unable to load your account.");
+    // Keep the current page mounted when refreshing the same user's session.
+    // Show the blocking loader only when there is no hydrated user
+    // or the authenticated identity has changed.
+    if (!isSameUser) {
+      setLoading(true);
+    }
 
-        setError(normalized);
+    setError(null);
+
+    try {
+      const appUser = await buildAppUser(nextSession.user);
+
+      currentUserRef.current = appUser;
+      setUser(appUser);
+      setError(null);
+    } catch (loadError) {
+      const normalized =
+        loadError instanceof Error
+          ? loadError
+          : new Error("Unable to load your account.");
+
+      setError(normalized);
+
+      // Do not discard a valid, already-hydrated user because a
+      // background profile/authorization refresh failed.
+      if (!isSameUser) {
+        currentUserRef.current = null;
         setUser(null);
-      } finally {
-        setLoading(false);
       }
-    },
-    []
-  );
+      if (!nextSession?.user) {
+  currentUserRef.current = null;
+  setUser(null);
+  setError(null);
+  setLoading(false);
+  return;
+}
+    } finally {
+      setLoading(false);
+    }
+  },
+  [],
+);
+
 
   useEffect(() => {
     let mounted = true;
@@ -349,19 +377,45 @@ export function AuthProvider({
       });
 
     const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(
-      (_event, nextSession) => {
-        /*
-         * Supabase recommends keeping auth-state callbacks
-         * synchronous. Defer profile queries outside the callback.
-         */
-        window.setTimeout(() => {
-          if (!mounted) return;
-          void hydrateSession(nextSession);
-        }, 0);
+  data: { subscription },
+} = supabase.auth.onAuthStateChange(
+  (event, nextSession) => {
+    window.setTimeout(() => {
+      if (!mounted) return;
+
+       if (event === "TOKEN_REFRESHED") {
+        // Refresh credentials without rebuilding the app user.
+        setSession(nextSession);
+        return;
       }
-    );
+      
+      if (event === "SIGNED_OUT" || !nextSession?.user) {
+        currentUserRef.current = null;
+        setSession(null);
+        setUser(null);
+        setError(null);
+        setLoading(false);
+        return;
+      }
+
+      // Keep the latest access/refresh tokens without rebuilding
+      // the profile and permissions on a normal token refresh.
+      setSession(nextSession);
+
+      const existingUser = currentUserRef.current;
+      const isSameUser =
+        existingUser?.id === nextSession.user.id;
+
+      // Other events for an already-loaded user must not trigger
+      // the blocking page loader.
+      if (isSameUser && event !== "USER_UPDATED") {
+        return;
+      }
+
+      void hydrateSession(nextSession);
+    }, 0);
+  },
+);
 
     return () => {
       mounted = false;

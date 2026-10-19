@@ -71,19 +71,36 @@ export default function DestinationDetail() {
     ).catch(() => undefined);
   }, [destination?.id, user?.id]);
 
-  usePageMeta({
-    title:
-      destination?.meta_title ??
-      (destination
-        ? `${destination.name} Travel | AeroFly Tours`
-        : "Destination | AeroFly Tours"),
-    description:
-      destination?.meta_description ??
-      destination?.description ??
-      `Explore ${destination?.name ?? "AeroFly destinations"} with AeroFly Tours.`,
-    canonical: window.location.origin + `/destinations/${slug}`,
-    image: destination?.imageUrl ?? undefined,
-  });
+  
+usePageMeta({
+  title:
+    destination?.meta_title ??
+    (destination
+      ? `${destination.name} Travel | AeroFlyy Tours`
+      : "Destination | AeroFlyy Tours"),
+  description:
+    destination?.meta_description ??
+    destination?.description ??
+    `Explore ${destination?.name ?? "AeroFlyy destinations"} with AeroFlyy Tours.`,
+  canonical: `${window.location.origin}/destinations/${slug}`,
+  image: destination?.imageUrl ?? undefined,
+  indexable: Boolean(destination),
+  structuredData: destination
+    ? {
+        "@context": "https://schema.org",
+        "@type": "TouristDestination",
+        name: destination.name,
+        description:
+          destination.meta_description ??
+          destination.description ??
+          undefined,
+        image: destination.imageUrl
+          ? [destination.imageUrl]
+          : undefined,
+      }
+    : null,
+});
+
 
   if (isLoading)
     return (

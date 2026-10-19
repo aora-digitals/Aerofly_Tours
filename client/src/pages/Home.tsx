@@ -38,12 +38,23 @@ const iconMap: Record<string, typeof Compass> = {
 };
 
 export default function Home() {
-  usePageMeta({
-    title: "AeroFly Tours | Thoughtful Domestic & International Travel",
-    description: "Explore curated domestic and international tours, destinations and travel assistance from AeroFly Tours.",
-    canonical: window.location.origin + "/",
-    image: heroImage,
-  });
+ 
+usePageMeta({
+  title: "AeroFlyy Tours | Thoughtful Domestic & International Travel",
+  description:
+    "Explore curated domestic and international tours, destinations and travel assistance from AeroFlyy Tours.",
+  canonical: `${window.location.origin}/`,
+  image: heroImage,
+  structuredData: {
+    "@context": "https://schema.org",
+    "@type": "TravelAgency",
+    name: "AeroFlyy Tours",
+    url: "https://aeroflyytours.com/",
+    description:
+      "Domestic and international travel planning and assistance.",
+  },
+});
+
 
   const { data, isLoading, isError } = trpc.content.home.useQuery(undefined, {
     staleTime: 60_000,
@@ -74,7 +85,7 @@ export default function Home() {
           <div className="relative mx-auto flex min-h-[650px] max-w-[1240px] items-center px-6 py-20 sm:px-8 lg:px-10">
             <div className="max-w-[680px]">
               <div className="reveal eyebrow text-[#ffb18c]">Thoughtful travel, from Pune to the world</div>
-              <h1 className="display reveal reveal-delay-1 mt-5 max-w-[680px] text-[52px] font-extrabold sm:text-[72px]">
+              <h1 className="display reveal reveal-delay-1 mt-5 max-w-[680px] text-[52px] font-extrabold sm:text-[72px]"> 
                 Your journey.<br /><span className="text-[#ff9c70]">Our responsibility.</span>
               </h1>
               <p className="reveal reveal-delay-2 mt-7 max-w-[540px] text-[16px] leading-7 text-white/78 sm:text-[18px]">
@@ -156,7 +167,7 @@ export default function Home() {
 
         <section className="section">
           <div className="container">
-            <div className="max-w-[650px]"><div className="eyebrow">More than a package</div><h2 className="display mt-3 text-4xl font-extrabold sm:text-5xl">The details matter. That’s where we come in.</h2><p className="mt-5 max-w-[570px] text-[15px] leading-7 text-[#6f6c66]">From choosing the right pace to keeping documents in order, AeroFly works as your travel partner—not just the company that hands you an itinerary.</p></div>
+            <div className="max-w-[650px]"><div className="eyebrow">More than a package</div><h2 className="display mt-3 text-4xl font-extrabold sm:text-5xl">The details matter. That’s where we come in.</h2><p className="mt-5 max-w-[570px] text-[15px] leading-7 text-[#6f6c66]">From choosing the right pace to keeping documents in order, AeroFlyy works as your travel partner—not just the company that hands you an itinerary.</p></div>
             <div className="mt-10 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
               {(services.length ? services.slice(0, 4) : []).map((service) => { const Icon = iconMap[service.icon_key ?? ""] ?? Compass; return <Link key={service.slug} href={`/services/${service.slug}`} className="card card-lift group p-6"><div className="grid h-11 w-11 place-items-center rounded-xl bg-[#fff0e8] text-[#f26b35]"><Icon size={20} /></div><h3 className="mt-5 font-['Manrope'] text-[17px] font-extrabold">{service.title}</h3><p className="mt-2 text-[13px] leading-6 text-[#77736c]">{service.intro}</p><div className="mt-5 flex items-center gap-1 text-[12px] font-bold text-[#c94d1c] opacity-0 transition group-hover:opacity-100">Learn more <ChevronRight size={14} /></div></Link>; })}
             </div>

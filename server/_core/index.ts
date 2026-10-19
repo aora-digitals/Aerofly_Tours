@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleStripeWebhook } from "../stripe";
+import { randomUUID } from "node:crypto";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -32,6 +33,57 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
 async function startServer() {
   const app = express();
   const server = createServer(app);
+ 
+app.disable("x-powered-by");
+
+server.requestTimeout = 30_000;
+server.headersTimeout = 35_000;
+server.keepAliveTimeout = 5_000;
+
+app.use((req, res, next) => {
+  const requestId = randomUUID();
+  const startedAt = process.hrtime.bigint();
+
+  res.setHeader("X-Request-Id", requestId);
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader(
+    "Referrer-Policy",
+    "strict-origin-when-cross-origin",
+  );
+  res.setHeader(
+    "Permissions-Policy",
+    "camera=(), microphone=(), geolocation=(self)",
+  );
+
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader(
+      "Strict-Transport-Security",
+      "max-age=31536000; includeSubDomains",
+    );
+  }
+
+  res.on("finish", () => {
+    const durationMs =
+      Number(process.hrtime.bigint() - startedAt) / 1_000_000;
+
+   if (process.env.LOG_HTTP_REQUESTS === "true") {
+  console.info(
+    JSON.stringify({
+      event: "http_request_complete",
+      requestId,
+      method: req.method,
+      route: req.route?.path ?? req.path,
+      status: res.statusCode,
+      durationMs: Math.round(durationMs * 100) / 100,
+    }),
+  );
+}
+  });
+
+  next();
+});
+
   app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
     try {
       const result = await handleStripeWebhook(req.body as Buffer, req.headers["stripe-signature"] as string | undefined);

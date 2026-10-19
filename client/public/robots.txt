@@ -1,0 +1,11 @@
+
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /dashboard/
+Disallow: /admin
+Disallow: /admin/
+Disallow: /login
+Disallow: /payment-status
+
+Sitemap: https://aeroflyytours.com/sitemap.xml

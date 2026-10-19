@@ -1,13 +1,148 @@
 import { createClient, type SupabaseClient, type User } from "https://esm.sh/@supabase/supabase-js@2.57.0";
 
+
+const APP_ORIGIN = (
+  Deno.env.get("APP_ORIGIN") ?? ""
+).replace(/\/$/, "");
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": Deno.env.get("APP_ORIGIN") ?? "http://localhost:3000",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Origin": APP_ORIGIN,
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
   "Vary": "Origin",
 };
+
+
 const BUCKET = "travel-documents";
 const MAX_BYTES = 10 * 1024 * 1024;
+
+const MAX_REQUEST_BYTES = 128 * 1024;
+
+function getAllowedOrigin(): string {
+  const configured = Deno.env.get("APP_ORIGIN");
+
+  if (!configured) {
+    throw new Error("APP_ORIGIN is not configured");
+  }
+
+  return new URL(configured).origin;
+}
+
+function travelSupportCorsHeaders(origin: string | null): Headers {
+  const headers = new Headers({
+    "Vary": "Origin",
+    "Access-Control-Allow-Methods": "POST, OPTIONS",
+    "Access-Control-Allow-Headers":
+      "authorization, apikey, content-type, x-client-info",
+    "Access-Control-Max-Age": "86400",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+  });
+
+  if (origin) {
+    headers.set("Access-Control-Allow-Origin", origin);
+  }
+
+  return headers;
+}
+
+async function readBoundedJson(req: Request): Promise<Json> {
+  const contentType = req.headers.get("content-type") ?? "";
+
+  if (!/^application\/json(?:\s*;|$)/i.test(contentType)) {
+    throw new RequestValidationError(
+      "Content-Type must be application/json",
+      415,
+    );
+  }
+
+  const contentLength = req.headers.get("content-length");
+
+  if (contentLength !== null) {
+    const length = Number(contentLength);
+
+    if (
+      !Number.isSafeInteger(length) ||
+      length < 0 ||
+      length > MAX_REQUEST_BYTES
+    ) {
+      throw new RequestValidationError("Request body is too large", 413);
+    }
+  }
+
+  if (!req.body) {
+    throw new RequestValidationError("Request body is required", 400);
+  }
+
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+
+      if (done) break;
+
+      totalBytes += value.byteLength;
+
+      if (totalBytes > MAX_REQUEST_BYTES) {
+        await reader.cancel();
+        throw new RequestValidationError("Request body is too large", 413);
+      }
+
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (totalBytes === 0) {
+    throw new RequestValidationError("Request body is required", 400);
+  }
+
+  const bodyBytes = new Uint8Array(totalBytes);
+  let offset = 0;
+
+  for (const chunk of chunks) {
+    bodyBytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let parsed: unknown;
+
+  try {
+    parsed = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bodyBytes));
+  } catch {
+    throw new RequestValidationError("Invalid JSON request body", 400);
+  }
+
+  if (
+    parsed === null ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    throw new RequestValidationError(
+      "Request body must be a JSON object",
+      400,
+    );
+  }
+
+  return parsed as Json;
+}
+
+class RequestValidationError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "RequestValidationError";
+  }
+}
+
+
 const MIME_TYPES = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp"]);
 const DOCUMENT_TYPES = new Set(["passport", "photo", "identity_document", "proof_of_funds", "travel_itinerary", "invitation_letter", "application_form", "supporting_document", "other"]);
 const STAFF_ROLES = ["owner", "admin", "manager", "customer_care", "counsellor", "staff"];
@@ -82,13 +217,58 @@ async function ownsTicket(admin: SupabaseClient, ticketId: number, userId: strin
   return null;
 }
 
-Deno.serve(async (req) => {
-  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (req.method !== "POST") return fail("Method not allowed", 405);
+Deno.serve(async (req: Request): Promise<Response> => {  
+  let responseOrigin: string | null = null;
+
   try {
+    const configuredOrigin = getAllowedOrigin();
+    const requestOrigin = req.headers.get("origin");
+
+    // Requests with a browser Origin must match the configured application.
+    if (requestOrigin) {
+      let normalizedOrigin: string;
+
+      try {
+        normalizedOrigin = new URL(requestOrigin).origin;
+      } catch {
+        return fail("Invalid request origin", 403);
+      }
+
+      if (normalizedOrigin !== configuredOrigin) {
+        return fail("Origin not allowed", 403);
+      }
+
+      responseOrigin = normalizedOrigin;
+    }
+
+    const corsHeaders = travelSupportCorsHeaders(responseOrigin);
+
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders,
+      });
+    }
+
+     if (req.method !== "POST") {
+      return new Response(
+        JSON.stringify({ error: "Method not allowed" }),
+        {
+          status: 405,
+          headers: {
+            ...Object.fromEntries(corsHeaders.entries()),
+            "Content-Type": "application/json",
+          },
+        },
+      );
+    }
+
+    // Authenticate before processing the requested action.
     const { userClient, adminClient } = clients(req);
     const user = await requireUser(userClient);
-    const body = await req.json() as Json;
+
+    // Replaces the old unbounded `await req.json()`.
+    const body = await readBoundedJson(req);
     const action = str(body.action, 80);
 
     if (action === "create_application") {
@@ -453,9 +633,29 @@ Deno.serve(async (req) => {
     }
 
     return fail("Unknown action", 404);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unexpected server error";
-    const status = message.includes("Authentication") || message.includes("session") ? 401 : 500;
-    return fail(message, status);
+    
+ } catch (error) {
+    if (error instanceof RequestValidationError) {
+      return fail(error.message, error.status);
+    }
+
+    // Do not return raw internal errors to clients.
+    if (error instanceof Error) {
+      const message = error.message.toLowerCase();
+
+      if (
+        message.includes("authentication") ||
+        message.includes("session") ||
+        message.includes("unauthorized")
+      ) {
+        return fail("Authentication required", 401);
+      }
+    }
+
+    console.error("[travel-support] Request failed", {
+      errorName: error instanceof Error ? error.name : "UnknownError",
+    });
+
+    return fail("An unexpected server error occurred", 500);
   }
 });

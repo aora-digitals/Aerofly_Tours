@@ -5,6 +5,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const DISPATCH_SECRET = Deno.env.get("NOTIFICATION_DISPATCH_SECRET") ?? "";
 const APP_ORIGIN = (Deno.env.get("APP_ORIGIN") ?? "").replace(/\/$/, "");
 const MAX_BATCH = 30;
+// const MAX_REQUEST_BYTES = 4 * 1024;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": APP_ORIGIN || "null",
@@ -194,29 +195,207 @@ async function markFailure(delivery: Delivery, code: string, safeMessage: string
   return { status: values.status, code };
 }
 
-Deno.serve(async (request: Request) => {
-  if (request.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
-  if (request.method !== "POST") return Response.json({ error: "Method not allowed" }, { status: 405, headers: corsHeaders });
-  if (!SUPABASE_URL || !SERVICE_ROLE_KEY || !DISPATCH_SECRET || !APP_ORIGIN) {
-    return Response.json({ error: "Notification dispatcher is not configured." }, { status: 503, headers: corsHeaders });
+Deno.serve(async (request: Request): Promise<Response> => {
+  const requestOrigin = request.headers.get("origin");
+
+  // Only allow browser requests from the configured application origin.
+  // Worker-to-worker requests without an Origin header remain supported.
+  const originAllowed =
+    !requestOrigin ||
+    requestOrigin === APP_ORIGIN;
+
+  const responseHeaders = new Headers(corsHeaders);
+  responseHeaders.set("Cache-Control", "no-store");
+  responseHeaders.set("Vary", "Origin");
+
+  if (requestOrigin && originAllowed) {
+    responseHeaders.set("Access-Control-Allow-Origin", APP_ORIGIN);
   }
-  const suppliedSecret = request.headers.get("x-notification-dispatch-secret") ?? "";
-  if (suppliedSecret.length !== DISPATCH_SECRET.length || !constantTimeEqual(suppliedSecret, DISPATCH_SECRET)) {
-    return Response.json({ error: "Unauthorized" }, { status: 401, headers: corsHeaders });
+
+  const respond = (
+    body: Record<string, unknown>,
+    status: number,
+  ): Response =>
+    Response.json(body, {
+      status,
+      headers: responseHeaders,
+    });
+
+  // CORS preflight.
+  if (request.method === "OPTIONS") {
+    if (!originAllowed) {
+      return respond({ error: "Origin not allowed" }, 403);
+    }
+
+    return new Response(null, {
+      status: 204,
+      headers: responseHeaders,
+    });
   }
+
+  if (!originAllowed) {
+    return respond({ error: "Origin not allowed" }, 403);
+  }
+
+  if (request.method !== "POST") {
+    responseHeaders.set("Allow", "POST, OPTIONS");
+    return respond({ error: "Method not allowed" }, 405);
+  }
+
+  // Ensure required server-side secrets are configured.
+  if (
+    !SUPABASE_URL ||
+    !SERVICE_ROLE_KEY ||
+    !DISPATCH_SECRET ||
+    !APP_ORIGIN
+  ) {
+    return respond(
+      { error: "Notification dispatcher is not configured." },
+      503,
+    );
+  }
+
+  // Authenticate the worker before processing its request body.
+  const suppliedSecret =
+    request.headers.get("x-notification-dispatch-secret") ?? "";
+
+  if (
+    suppliedSecret.length !== DISPATCH_SECRET.length ||
+    !constantTimeEqual(suppliedSecret, DISPATCH_SECRET)
+  ) {
+    return respond({ error: "Unauthorized" }, 401);
+  }
+
+  // Bound request-body size to prevent unnecessarily large payloads.
+  const MAX_REQUEST_BYTES = 4 * 1024;
+  const contentLength = request.headers.get("content-length");
+
+  if (contentLength !== null) {
+    const declaredLength = Number(contentLength);
+
+    if (
+      !Number.isSafeInteger(declaredLength) ||
+      declaredLength < 0
+    ) {
+      return respond({ error: "Invalid Content-Length header" }, 400);
+    }
+
+    if (declaredLength > MAX_REQUEST_BYTES) {
+      return respond({ error: "Request body too large" }, 413);
+    }
+  }
+
   let batchSize = 20;
+
   try {
-    const body = await request.json().catch(() => ({})) as { batchSize?: unknown };
-    if (typeof body.batchSize === "number" && Number.isInteger(body.batchSize)) batchSize = Math.min(MAX_BATCH, Math.max(1, body.batchSize));
-  } catch { /* empty request is valid */ }
-  const { data, error } = await db.rpc("phase9_claim_notification_deliveries", { p_batch_size: batchSize });
-  if (error) return Response.json({ error: "Unable to claim notification deliveries." }, { status: 500, headers: corsHeaders });
-  const deliveries = (data ?? []) as Delivery[];
-  const results = await Promise.all(deliveries.map(async (delivery) => {
-    try { return { id: delivery.id, channel: delivery.channel, ...(await processOne(delivery)) }; }
-    catch { return { id: delivery.id, channel: delivery.channel, status: "worker_error", code: "UNEXPECTED_DELIVERY_ERROR" }; }
-  }));
-  return Response.json({ claimed: deliveries.length, results }, { status: 200, headers: corsHeaders });
+    const rawBody = await request.text();
+
+    if (
+      new TextEncoder().encode(rawBody).byteLength >
+      MAX_REQUEST_BYTES
+    ) {
+      return respond({ error: "Request body too large" }, 413);
+    }
+
+    // An empty body is valid and uses the default batch size.
+    if (rawBody.trim().length > 0) {
+      let body: unknown;
+
+      try {
+        body = JSON.parse(rawBody);
+      } catch {
+        return respond({ error: "Invalid JSON request body" }, 400);
+      }
+
+      if (
+        body === null ||
+        typeof body !== "object" ||
+        Array.isArray(body)
+      ) {
+        return respond(
+          { error: "Request body must be a JSON object" },
+          400,
+        );
+      }
+
+      const requestedBatchSize = (
+        body as { batchSize?: unknown }
+      ).batchSize;
+
+      if (requestedBatchSize !== undefined) {
+        if (
+          typeof requestedBatchSize !== "number" ||
+          !Number.isInteger(requestedBatchSize)
+        ) {
+          return respond(
+            { error: "batchSize must be an integer" },
+            400,
+          );
+        }
+
+        batchSize = Math.min(
+          MAX_BATCH,
+          Math.max(1, requestedBatchSize),
+        );
+      }
+    }
+  } catch {
+    return respond({ error: "Unable to read request body" }, 400);
+  }
+
+  // Preserve the existing atomic claim operation. Do not replace this
+  // with a direct table query, which could allow duplicate workers.
+  let deliveries: Delivery[];
+
+  try {
+    const { data, error } = await db.rpc(
+      "phase9_claim_notification_deliveries",
+      { p_batch_size: batchSize },
+    );
+
+    if (error) {
+      return respond(
+        { error: "Unable to claim notification deliveries." },
+        500,
+      );
+    }
+
+    deliveries = (data ?? []) as Delivery[];
+  } catch {
+    return respond(
+      { error: "Unable to claim notification deliveries." },
+      500,
+    );
+  }
+
+  // MAX_BATCH must remain a small, configured upper bound.
+  // Each delivery is isolated so one failure doesn't abort the batch.
+  const results = await Promise.all(
+    deliveries.map(async (delivery) => {
+      try {
+        return {
+          id: delivery.id,
+          channel: delivery.channel,
+          ...(await processOne(delivery)),
+        };
+      } catch {
+        return {
+          id: delivery.id,
+          channel: delivery.channel,
+          status: "worker_error",
+          code: "UNEXPECTED_DELIVERY_ERROR",
+        };
+      }
+    }),
+  );
+
+  return respond(
+    {
+      claimed: deliveries.length,
+      results,
+    },
+    200,
+  );
 });
 
 function constantTimeEqual(a: string, b: string): boolean {

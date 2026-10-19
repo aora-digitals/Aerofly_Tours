@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   BarChart3,
   Bell,
@@ -22,6 +22,9 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import AdminSalesWorkspace from "@/components/admin/AdminSalesWorkspace";
 import AdminFinanceWorkspace from "@/components/admin/AdminFinanceWorkspace";
 import AdminSupportWorkspace from "@/components/admin/AdminSupportWorkspace";
+import TourCatalogueWorkspace from "@/components/admin/TourCatalogueWorkspace";
+import AdminBookingsWorkspace from "@/components/admin/AdminBookingsWorkspace";
+
 import { trpc } from "@/lib/trpc";
 import {
   ASSIGNABLE_ROLE_LABELS,
@@ -81,8 +84,44 @@ export default function AdminDashboard() {
   const { data: team } = trpc.admin.team.list.useQuery(undefined, {
     enabled: allowed && can("team"),
   });
-  const [active, setActive] = useState("overview");
-  const visibleNav = useMemo(
+const ACTIVE_SECTION_KEY = "aerofly-admin-active-section";
+
+const VALID_SECTIONS = [
+  "overview",
+  "work",
+  "sales",
+  "support",
+  "finance",
+  "catalogue",
+  "team",
+  "marketing",
+  "customers",
+  "bookings",
+  "reports",
+  "notifications",
+];
+
+const [active, setActive] = useState(() => {
+  try {
+    const saved = localStorage.getItem(ACTIVE_SECTION_KEY);
+
+    return saved && VALID_SECTIONS.includes(saved)
+      ? saved
+      : "overview";
+  } catch {
+    return "overview";
+  }
+});
+
+ useEffect(() => {
+  try {
+    localStorage.setItem(ACTIVE_SECTION_KEY, active);
+  } catch {
+    // The dashboard remains usable if browser storage is unavailable.
+  }
+}, [active]);
+
+const visibleNav = useMemo(
     () => baseNav.filter(([, , , permission]) => can(permission)),
     [user?.role],
   );
@@ -111,6 +150,7 @@ export default function AdminDashboard() {
       </div>
     );
 
+
   const stats = data?.stats;
   const accent = roleAccent[role];
   const roleLabel = STAFF_ROLE_LABELS[role];
@@ -137,23 +177,32 @@ export default function AdminDashboard() {
           </div>
           <nav className="mt-3 space-y-1">
             {visibleNav.map(([label, id, Icon]) => (
-              <button
-                key={id}
-                onClick={() =>
-                  id === "crm"
-                    ? window.location.assign("/admin/crm")
-                    : id === "notifications"
-                      ? window.location.assign("/admin/notifications")
-                      : id === "campaigns"
-                      ? window.location.assign("/admin/marketing/campaigns")
-                      : setActive(id)
-                }
-                className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-[12px] font-semibold transition ${active === id ? "bg-white/10 text-white" : "text-white/55 hover:bg-white/5 hover:text-white"}`}
-              >
-                <Icon size={16} />
-                {label}
-              </button>
-            ))}
+  <button
+    key={id}
+    onClick={() => {
+      if (id === "crm") {
+        window.location.assign("/admin/crm");
+      } else if (id === "notifications") {
+        window.location.assign("/admin/notifications");
+      } else if (id === "campaigns") {
+        window.location.assign("/admin/marketing/campaigns");
+      } else if (id === "bookings") {
+        window.location.assign("/admin/booking-history");
+      } else {
+        setActive(id);
+      }
+    }}
+    className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left text-[12px] font-semibold transition ${
+      active === id
+        ? "bg-white/10 text-white"
+        : "text-white/55 hover:bg-white/5 hover:text-white"
+    }`}
+  >
+    <Icon size={16} />
+    {label}
+  </button>
+  
+))}
           </nav>
           <div className="mx-3 border-t border-white/30 mt-4 mb-4"/>
           <div className="mt-auto shrink-0 border-t border-white/10 bg-[#191a18] p-4 rounded-lg bg-white/5 p-3 ">          
@@ -423,18 +472,15 @@ export default function AdminDashboard() {
           )}
           {active === "finance" && can("finance") && <AdminFinanceWorkspace />}
           {active === "catalogue" && can("catalogue") && (
-            <RolePanel
-              title="Tour catalogue"
-              copy="Manage published tours, packages and destination content. Keep the public catalogue accurate, seasonal and aligned with current sales strategy."
-              cards={[
-                "Published tours",
-                "Destination pages",
-                "Package builder",
-                "Seasonal availability",
-              ]}
-              accent={accent}
-            />
-          )}
+  <TourCatalogueWorkspace />
+)}
+
+
+        {active === "bookings" && can("bookings") && (
+          <AdminBookingsWorkspace />
+        )}
+
+
           {active === "team" && can("team") && (
             <TeamPanel members={team ?? []} />
           )}
@@ -464,19 +510,7 @@ export default function AdminDashboard() {
               accent={accent}
             />
           )}
-          {active === "bookings" && can("bookings") && (
-            <RolePanel
-              title="Bookings control room"
-              copy="Coordinate confirmed trips, supplier handoffs and customer-ready travel status updates."
-              cards={[
-                "Confirmed departures",
-                "Payment status",
-                "Supplier handoffs",
-                "Travel document readiness",
-              ]}
-              accent={accent}
-            />
-          )}
+       
           {active === "reports" && can("reports") && (
             <RolePanel
               title="Performance & reports"

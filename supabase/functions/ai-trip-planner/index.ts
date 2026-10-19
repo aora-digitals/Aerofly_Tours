@@ -1,13 +1,18 @@
 
 import { createClient, type SupabaseClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+
+const APP_ORIGIN = (Deno.env.get("APP_ORIGIN") ?? "").replace(/\/$/, "");
+
 const corsHeaders: Record<string, string> = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": APP_ORIGIN,
   "Access-Control-Allow-Headers":
     "authorization, x-client-info, apikey, content-type",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
+  "Vary": "Origin",
   "Content-Type": "application/json; charset=utf-8",
 };
+
 
 type JsonObject = Record<string, unknown>;
 
@@ -89,6 +94,48 @@ type Catalogue = {
 const MAX_BODY_BYTES = 100_000;
 const MAX_DAYS = 30;
 const MAX_TRAVELLERS = 30;
+
+
+async function sha256Hex(value: string): Promise<string> {
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(value),
+  );
+
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function consumeAiRateLimit(
+  supabase: SupabaseClient,
+  subject: string,
+  maxRequests: number,
+): Promise<boolean> {
+  const subjectHash = await sha256Hex(
+    `aerofly-trip-planner-v1:${subject}`,
+  );
+
+  const { data, error } = await supabase.rpc(
+    "phase10_ai_consume_rate_limit",
+    {
+      p_subject_hash: subjectHash,
+      p_window_seconds: 60,
+      p_max_requests: maxRequests,
+    },
+  );
+
+  if (error) {
+    console.error("AI rate-limit check failed", {
+      code: error.code,
+    });
+
+    throw new Error("AI rate limiting is temporarily unavailable.");
+  }
+
+  return data === true;
+}
+
 
 function reply(status: number, data: JsonObject): Response {
   return new Response(JSON.stringify(data), {
@@ -1386,6 +1433,39 @@ async function handleRequest(
 
   const user = await getAuthenticatedUser(request, supabase);
 
+  
+  const rateLimitedActions = new Set([
+    "generate",
+    "submit-enquiry",
+  ]);
+
+  if (rateLimitedActions.has(action)) {
+    const forwardedIp =
+      request.headers.get("cf-connecting-ip") ?? "unknown";
+
+    const subject = user
+      ? `user:${user.id}`
+      : `anonymous:${forwardedIp}`;
+
+    const limit = action === "generate"
+      ? (user ? 12 : 6)
+      : 5;
+
+    const allowed = await consumeAiRateLimit(
+      supabase,
+      subject,
+      limit,
+    );
+
+    if (!allowed) {
+      return reply(429, {
+        error:
+          "Too many requests. Please wait before trying again.",
+      });
+    }
+  }
+
+
   // Generating a plan can work without an account. Saving, retrieving,
   // deleting, and submitting enquiries require an authenticated customer.
   const requiresAuth = [
@@ -1714,8 +1794,29 @@ if (!ownedPlan) {
 }
 
 Deno.serve(async (request: Request) => {
+ 
+  const origin = request.headers.get("origin");
+
+  if (origin && (!APP_ORIGIN || origin !== APP_ORIGIN)) {
+    return new Response(
+      JSON.stringify({ error: "Origin not allowed." }),
+      {
+        status: 403,
+        headers: {
+          "Content-Type": "application/json; charset=utf-8",
+          "Cache-Control": "no-store",
+          "Vary": "Origin",
+        },
+      },
+    );
+  }
+
+
   if (request.method === "OPTIONS") {
-    return new Response("ok", { headers: corsHeaders });
+    return new Response(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
   }
 
   let supabase: SupabaseClient;

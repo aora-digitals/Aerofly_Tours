@@ -659,8 +659,9 @@ async function generate() {
         : "Your itinerary was generated and saved successfully. Review all costs and travel details before booking.",
     );
   } catch (err) {
-    console.error("Trip itinerary generation/save failed:", err);
-
+console.error("[Trip planner] Generation or save failed", {
+  errorName: err instanceof Error ? err.name : "UnknownError",
+});
     setError(
       err instanceof Error
         ? err.message
@@ -676,7 +677,6 @@ async function generate() {
     try {
       const result = await invoke<{ plans: SavedPlan[] }>("list");
       setPlans(result.plans);
-      console.log(plans)
     } catch {
       // Guests can still generate an itinerary. Saved plans require sign-in.
       setPlans([]);
@@ -1300,6 +1300,7 @@ const durationNights = durationDays > 0 ? durationDays - 1 : 0;
       <button
         type="button"
         onClick={generate}
+        aria-busy={busy}
         disabled={
           busy ||
           !preferences.origin.trim() ||
@@ -1321,17 +1322,31 @@ const durationNights = durationDays > 0 ? durationDays - 1 : 0;
       </button>
     </div>
 
-    {error && (
-      <p role="alert" className="mt-4 text-sm text-red-700">
-        {error}
-      </p>
-    )}
+   {busy && (
+  <p role="status" aria-live="polite" className="text-sm">
+    Preparing your itinerary…
+  </p>
+)}
 
-    {notice && (
-      <p role="status" className="mt-3 text-xs leading-5 text-[#77736c]">
-        {notice}
-      </p>
-    )}
+{error && (
+  <p
+    role="alert"
+    aria-live="assertive"
+    className="text-sm text-red-700"
+  >
+    {error}
+  </p>
+)}
+
+{notice && (
+  <p
+    role="status"
+    aria-live="polite"
+    className="text-sm"
+  >
+    {notice}
+  </p>
+)}
   </section>}
 
   {/* FULL-WIDTH DRAFT — below the preferences form */}

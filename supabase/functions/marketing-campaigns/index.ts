@@ -6,6 +6,8 @@ const SERVICE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const APP_ORIGIN = (Deno.env.get("APP_ORIGIN") ?? "").replace(/\/$/, "");
 const WORKER_SECRET = Deno.env.get("MARKETING_CAMPAIGN_WORKER_SECRET") ?? "";
 const MAX_BATCH = 200;
+const MAX_REQUEST_BYTES = 64 * 1024;
+
 const ALLOWED_ROLES = ["owner", "admin", "manager", "marketing"];
 const CHANNELS = new Set(["in_app", "email", "sms", "whatsapp"]);
 const AUDIENCES = new Set(["consented_customers", "domestic_interest", "international_interest", "wishlist_travelers", "recently_active"]);
@@ -108,6 +110,16 @@ async function processDueCampaigns() {
 Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response("ok", { headers: cors });
   if (request.method !== "POST") return response({ error: "Method not allowed." }, 405);
+  
+  const origin = request.headers.get("origin");
+
+  if (origin && (!APP_ORIGIN || origin !== APP_ORIGIN)) {
+    return response(
+      { error: "Origin not allowed." },
+      403,
+    );
+  }
+
   if (!URL || !SERVICE_KEY || !ANON_KEY || !APP_ORIGIN) return response({ error: "Marketing campaign service is not configured." }, 503);
 
   const workerSecret = request.headers.get("x-marketing-worker-secret") ?? "";
@@ -118,9 +130,54 @@ Deno.serve(async (request: Request) => {
 
   const auth = await authorize(request);
   if (auth.error) return auth.error;
-  let payload: Record<string, unknown>;
-  try { payload = await request.json() as Record<string, unknown>; }
-  catch { return response({ error: "A valid JSON request body is required." }, 400); }
+  
+let payload: Record<string, unknown>;
+
+const declaredLength = Number(
+  request.headers.get("content-length") ?? "0",
+);
+
+if (declaredLength > MAX_REQUEST_BYTES) {
+  return response(
+    { error: "Request body is too large." },
+    413,
+  );
+}
+
+const rawBody = await request.text();
+
+if (
+  new TextEncoder().encode(rawBody).byteLength >
+  MAX_REQUEST_BYTES
+) {
+  return response(
+    { error: "Request body is too large." },
+    413,
+  );
+}
+
+try {
+  const parsed: unknown = JSON.parse(rawBody);
+
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    Array.isArray(parsed)
+  ) {
+    return response(
+      { error: "A JSON object is required." },
+      400,
+    );
+  }
+
+  payload = parsed as Record<string, unknown>;
+} catch {
+  return response(
+    { error: "A valid JSON request body is required." },
+    400,
+  );
+}
+
   const action = payload.action;
   try {
     if (action === "list") {

@@ -47,21 +47,74 @@ export async function setupVite(app: Express, server: Server) {
   });
 }
 
+
 export function serveStatic(app: Express) {
   const distPath =
     process.env.NODE_ENV === "development"
-      ? path.resolve(import.meta.dirname, "../..", "dist", "public")
+      ? path.resolve(
+          import.meta.dirname,
+          "../..",
+          "dist",
+          "public",
+        )
       : path.resolve(import.meta.dirname, "public");
+
   if (!fs.existsSync(distPath)) {
     console.error(
-      `Could not find the build directory: ${distPath}, make sure to build the client first`
+      `Could not find the build directory: ${distPath}. Build the client first.`,
     );
   }
 
-  app.use(express.static(distPath));
+  app.use(
+    express.static(distPath, {
+      index: false,
+      setHeaders(res, filePath) {
+        const isFingerprintAsset =
+          /[.-][A-Za-z0-9_-]{8,}\.(?:js|css|woff2?|png|jpe?g|webp|avif|svg)$/i.test(
+            path.basename(filePath),
+          );
 
-  // fall through to index.html if the file doesn't exist
-  app.use("*", (_req, res) => {
-    res.sendFile(path.resolve(distPath, "index.html"));
+        if (isFingerprintAsset) {
+          res.setHeader(
+            "Cache-Control",
+            "public, max-age=31536000, immutable",
+          );
+        } else {
+          res.setHeader(
+            "Cache-Control",
+            "public, max-age=300",
+          );
+        }
+
+        res.setHeader("X-Content-Type-Options", "nosniff");
+      },
+    }),
+  );
+
+  app.use("*", (req, res, next) => {
+    // API paths must not silently become the SPA HTML page.
+    if (
+      req.path === "/api" ||
+      req.path.startsWith("/api/") ||
+      req.path.startsWith("/functions/")
+    ) {
+      next();
+      return;
+    }
+
+    res.setHeader(
+      "Cache-Control",
+      "no-cache, no-store, must-revalidate",
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+
+    res.sendFile(
+      path.resolve(distPath, "index.html"),
+      (error) => {
+        if (error && !res.headersSent) next(error);
+      },
+    );
   });
 }
+

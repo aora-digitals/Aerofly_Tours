@@ -69,10 +69,12 @@ queryClient
         error
       );
 
-      console.error(
-        "[API Query Error]",
-        error
-      );
+      console.error("[API Query Error]", {
+  name:
+    error instanceof Error
+      ? error.name
+      : "UnknownError",
+});
     }
   });
 
@@ -89,11 +91,12 @@ queryClient
       redirectToLoginIfUnauthorized(
         error
       );
-
-      console.error(
-        "[API Mutation Error]",
-        error
-      );
+console.error("[API Mutation Error]", {
+  name:
+    error instanceof Error
+      ? error.name
+      : "UnknownError",
+});
     }
   });
 

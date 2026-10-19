@@ -44,30 +44,9 @@ export default function TourDetails() {
   const [wishlistBusy, setWishlistBusy] = useState(false);
 
 
-console.log("Tour data:", tour);
-
-console.log("First itinerary day:", tour?.itinerary?.[0]);
-
-console.log("All itinerary coordinates:",
-  tour?.itinerary?.map((day: any) => ({
-    id: day.id,
-    dayNumber: day.dayNumber,
-    title: day.title,
-    latitude: day.latitude,
-    longitude: day.longitude,
-  }))
-);
-
-console.log("Destination coordinates:", {
-  name: tour?.destinationDetails?.name,
-  latitude: tour?.destinationDetails?.latitude,
-  longitude: tour?.destinationDetails?.longitude,
-});
-
-
   useEffect(() => {
     if (!tour) return;
-    const key = `aerofly-tour-view:${tour.id}`;
+    const key = `AeroFlyy-tour-view:${tour.id}`;
     if (!sessionStorage.getItem(key)) {
       sessionStorage.setItem(key, "1");
       viewMutation.mutate({ tourId: tour.id });
@@ -105,17 +84,39 @@ console.log("Destination coordinates:", {
     }
   };
 
-  usePageMeta({
-    title: tour
-      ? `${tour.title} | AeroFly Tours`
-      : "Tour Details | AeroFly Tours",
-    description:
-      tour?.metaDescription ??
-      tour?.overview ??
-      "Explore this AeroFly Tours itinerary.",
-    canonical: window.location.origin + `/tours/${slug}`,
-    image: tour?.imageUrl ?? undefined,
-  });
+ 
+usePageMeta({
+  title: tour
+    ? `${tour.title} | AeroFlyy Tours`
+    : "Tour Details | AeroFlyy Tours",
+  description:
+    tour?.metaDescription ??
+    tour?.overview ??
+    "Explore this AeroFlyy Tours itinerary.",
+  canonical: `${window.location.origin}/tours/${slug}`,
+  image: tour?.imageUrl ?? undefined,
+  indexable: Boolean(tour),
+  structuredData: tour
+    ? {
+        "@context": "https://schema.org",
+        "@type": "TouristTrip",
+        name: tour.title,
+        description:
+          tour.metaDescription ??
+          tour.overview ??
+          undefined,
+        image: tour.imageUrl
+          ? [tour.imageUrl]
+          : undefined,
+        provider: {
+          "@type": "TravelAgency",
+          name: "AeroFlyy Tours",
+          url: "https://aeroflyytours.com/",
+        },
+      }
+    : null,
+});
+
 
   const gallery = useMemo(() => {
     const media = (tour?.media ?? [])
@@ -487,6 +488,32 @@ const tourMapPoints =
                             className="mt-5 aspect-[2.4] w-full rounded-xl object-cover"
                           />
                         )}
+                        {tour.itinerary.length
+  ? tour.itinerary.map((day: any) => (
+      <div key={day.id} className="card overflow-hidden p-5">
+
+        {/* Existing day number, title, description,
+            meals, accommodation and activities */}
+
+        {day.image_url && (
+          <img
+            src={day.image_url}
+            alt={`${day.title} itinerary`}
+            loading="lazy"
+            className="mt-5 aspect-[2.4] w-full rounded-xl object-cover"
+          />
+        )}
+
+        {/* PASTE YOUR MAP LINKS AND SPOTS JSX HERE */}
+
+      </div>
+    ))
+  : (
+      <div className="card p-6 text-sm text-[#77736c]">
+        The detailed itinerary will be confirmed by your travel advisor.
+      </div>
+    )
+}
                       </div>
                     ))
                   ) : (

@@ -14,11 +14,15 @@ const Empty = ({ text }: { text: string }) => (
 );
 
 export default function SearchPage() {
-  usePageMeta({
-    title: "Search | AeroFly Tours",
-    description: "Search AeroFly tours, destinations and travel services.",
-    canonical: window.location.origin + "/search",
-  });
+  
+usePageMeta({
+  title: "Search | AeroFlyy Tours",
+  description:
+    "Search AeroFlyy tours, destinations and travel services.",
+  canonical: `${window.location.origin}/search`,
+  indexable: false,
+});
+
 
   const [term, setTerm] = useState("");
   const [submitted, setSubmitted] = useState("");
