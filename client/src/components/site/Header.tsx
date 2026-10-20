@@ -53,7 +53,7 @@ export default function Header() {
             </span>
             <span className="leading-none">
               <span className="block font-['Manrope'] text-[16px] font-extrabold tracking-[-.04em]">
-                AeroFly
+                AeroFlyy
               </span>
               <span className="mt-1 block text-[9px] font-bold uppercase tracking-[.22em] text-[#77736c]">
                 Tours

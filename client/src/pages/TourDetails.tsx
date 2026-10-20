@@ -8,6 +8,10 @@ import {
   MapPin,
   ShieldCheck,
   Star,
+  Images,
+  ChevronLeft,
+  ChevronRight,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, useLocation } from "wouter";
@@ -16,6 +20,7 @@ import Footer from "@/components/site/Footer";
 import EnquiryModal from "@/components/site/EnquiryModal";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
+import DirectBookingModal from "@/components/site/DirectBookingModal";
 import {
   addToWishlist,
   isTourWishlisted,
@@ -31,18 +36,36 @@ import TravelMap, { MapPoint } from "@/components/site/TravelMap";
 export default function TourDetails() {
   const slug = window.location.pathname.split("/").filter(Boolean).pop() ?? "";
   const [, navigate] = useLocation();
-  const {
-    data: tour,
-    isLoading,
-    isError,
-  } = trpc.content.tour.useQuery({ slug }, { staleTime: 60_000 });
-  const viewMutation = trpc.content.recordTourView.useMutation();
-  const [enquiryOpen, setEnquiryOpen] = useState(false);
-  const { format, currency } = useCurrency();
-  const { user, isAuthenticated } = useAuth();
-  const [wishlisted, setWishlisted] = useState(false);
-  const [wishlistBusy, setWishlistBusy] = useState(false);
+  
+const {
+  data: tour,
+  isLoading,
+  isError,
+} = trpc.content.tour.useQuery({ slug }, { staleTime: 60_000 });
 
+const viewMutation = trpc.content.recordTourView.useMutation();
+
+const [enquiryOpen, setEnquiryOpen] = useState(false);
+const { format, currency } = useCurrency();
+const { user, isAuthenticated } = useAuth();
+const [wishlisted, setWishlisted] = useState(false);
+const [wishlistBusy, setWishlistBusy] = useState(false);
+const [directBookingOpen, setDirectBookingOpen] = useState(false);
+
+const [galleryOpen, setGalleryOpen] = useState(false);
+const [activeImageIndex, setActiveImageIndex] = useState(0);
+
+const showPreviousImage = () => {
+  setActiveImageIndex((current) =>
+    (current - 1 + galleryImages.length) % galleryImages.length
+  );
+};
+
+const showNextImage = () => {
+  setActiveImageIndex((current) =>
+    (current + 1) % galleryImages.length
+  );
+};
 
   useEffect(() => {
     if (!tour) return;
@@ -137,6 +160,20 @@ usePageMeta({
       ),
     ).slice(0, 8);
   }, [tour]);
+
+
+  const galleryImages = useMemo(
+  () =>
+    Array.from(
+      new Set(
+        [tour?.imageUrl, ...gallery].filter(
+          (image): image is string =>
+            typeof image === "string" && image.trim().length > 0
+        )
+      )
+    ),
+  [tour?.imageUrl, gallery],
+);
 
   if (isLoading)
     return (
@@ -351,60 +388,195 @@ const tourMapPoints =
                 </div>
               </div>
             </div>
-            {gallery.length > 0 && (
-              <div className="mt-10 grid min-h-[420px] gap-3 sm:grid-cols-[1.4fr_.8fr] sm:grid-rows-2">
-                {gallery.slice(0, 3).map((image, index) => (
-                  <img
-                    key={image}
-                    src={image}
-                    alt={`${tour.title} view ${index + 1}`}
-                    loading={index === 0 ? "eager" : "lazy"}
-                    className={`h-full min-h-[200px] w-full rounded-2xl object-cover ${index === 0 ? "sm:row-span-2" : ""}`}
-                  />
-                ))}
+
+  <div className="mt-8 grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,65fr)_minmax(0,35fr)] lg:items-start">        
+{galleryImages.length > 0 && (
+  <div className="min-w-0">
+    {/* Single cover image */}
+    <div className="group relative overflow-hidden rounded-2xl bg-[#e8e4dd]">
+      <img
+        src={galleryImages[0]}
+        alt={`${tour.title} cover`}
+        loading="eager"
+        className="h-[280px] w-full object-cover sm:h-[420px] lg:h-[500px] transition-transform duration-500 group-hover:scale-[1.02]"
+      />
+
+      {/* Image gradient */}
+      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-transparent to-black/10" />
+
+      {/* Image count */}
+      <div className="absolute bottom-5 left-5 text-sm font-semibold text-white drop-shadow">
+        {tour.title}
+        <div className="mt-1 text-xs font-medium text-white/80">
+          {galleryImages.length} photos
+        </div>
+      </div>
+
+      {/* View all photos */}
+      <button
+        type="button"
+        onClick={() => {
+          setActiveImageIndex(0);
+          setGalleryOpen(true);
+        }}
+        className="absolute bottom-4 right-4 flex items-center gap-2 rounded-xl border border-white/70 bg-white/95 px-4 py-3 text-xs font-extrabold text-[#292722] shadow-lg transition hover:bg-white sm:bottom-6 sm:right-6"
+        aria-label={`View all ${galleryImages.length} photos`}
+      >
+        <Images size={17} className="text-[#c94d1c]" />
+        View all photos
+        <span className="rounded-md bg-[#f3ede5] px-2 py-1 text-[10px]">
+          {galleryImages.length}
+        </span>
+      </button>
+    </div>
+  </div>
+)}
+
+{/* Full-screen gallery viewer */}
+{galleryOpen && galleryImages.length > 0 && (
+  <div
+    className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 p-3 backdrop-blur-sm sm:p-6"
+    role="dialog"
+    aria-modal="true"
+    aria-label={`${tour.title} photo gallery`}
+    onClick={() => setGalleryOpen(false)}
+  >
+    <div
+      className="relative flex h-full max-h-[900px] w-full max-w-6xl flex-col overflow-hidden rounded-2xl bg-[#171717] text-white shadow-2xl"
+      onClick={(event) => event.stopPropagation()}
+    >
+      {/* Header */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-white/10 px-4 py-4 sm:px-6">
+        <div className="min-w-0">
+          <h2 className="truncate text-sm font-extrabold sm:text-base">
+            {tour.title}
+          </h2>
+          <p className="mt-1 text-xs text-white/55">
+            Photo {activeImageIndex + 1} of {galleryImages.length}
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setGalleryOpen(false)}
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-white/10 transition hover:bg-white/20"
+          aria-label="Close gallery"
+        >
+          <X size={21} />
+        </button>
+      </div>
+
+      {/* Main image and navigation */}
+      <div className="relative flex min-h-0 flex-1 items-center justify-center p-3 sm:p-6">
+        <img
+          key={galleryImages[activeImageIndex]}
+          src={galleryImages[activeImageIndex]}
+          alt={`${tour.title} photo ${activeImageIndex + 1}`}
+          className="max-h-full max-w-full select-none object-contain"
+        />
+
+        {galleryImages.length > 1 && (
+          <>
+            <button
+              type="button"
+              onClick={showPreviousImage}
+              className="absolute left-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-black/65 text-white shadow-lg transition hover:bg-[#c94d1c] sm:left-5 sm:h-12 sm:w-12"
+              aria-label="Previous photo"
+            >
+              <ChevronLeft size={25} />
+            </button>
+
+            <button
+              type="button"
+              onClick={showNextImage}
+              className="absolute right-2 top-1/2 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full border border-white/15 bg-black/65 text-white shadow-lg transition hover:bg-[#c94d1c] sm:right-5 sm:h-12 sm:w-12"
+              aria-label="Next photo"
+            >
+              <ChevronRight size={25} />
+            </button>
+          </>
+        )}
+      </div>
+
+      {/* Thumbnail strip */}
+      {galleryImages.length > 1 && (
+        <div className="shrink-0 border-t border-white/10 bg-[#111111] px-3 py-3 sm:px-5">
+          <div className="flex gap-2 overflow-x-auto pb-1">
+            {galleryImages.map((image, index) => (
+              <button
+                key={`${image}-${index}`}
+                type="button"
+                onClick={() => setActiveImageIndex(index)}
+                className={`relative h-14 w-16 shrink-0 overflow-hidden rounded-lg border-2 transition sm:h-[72px] sm:w-24 ${
+                  activeImageIndex === index
+                    ? "border-[#f26b35] opacity-100"
+                    : "border-transparent opacity-55 hover:opacity-100"
+                }`}
+                aria-label={`View photo ${index + 1}`}
+                aria-current={
+                  activeImageIndex === index ? "true" : undefined
+                }
+              >
+                <img
+                  src={image}
+                  alt=""
+                  loading="lazy"
+                  className="h-full w-full object-cover"
+                />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  </div>
+)}
+
+<aside className="lg:pt-8">
+              <div className="card sticky top-28 p-6">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="eyebrow">Make it yours</div>
+                    <h3 className="mt-2 font-['Manrope'] text-2xl font-extrabold">
+                      Let’s shape the details.
+                    </h3>
+                  </div>
+                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]">
+                    <ShieldCheck size={20} />
+                  </div>
+                </div>
+                <p className="mt-4 text-[13px] leading-6 text-[#6f6c66]">
+                  Availability, rooming, flights, transfers and the little
+                  details can all be adjusted with our travel desk.
+                </p>
+                <button
+                  onClick={() => setEnquiryOpen(true)}
+                  className="btn btn-primary mt-6 w-full"
+                >
+                  Request a callback <ArrowRight size={15} />
+                </button>
+                <button
+  type="button"
+  onClick={() => setDirectBookingOpen(true)}
+  className="mt-2 w-full rounded-full border border-orange-700 px-5 py-3 text-sm font-bold text-orange-800 transition hover:bg-orange-50"
+>
+  Book Now <ArrowRight size={15} className="ml-1 inline" />
+</button>
+                <div className="mt-5 border-t border-[#eee9e1] pt-5 text-[12px] leading-6 text-[#77736c]">
+                  Prices are starting estimates and may change with dates,
+                  availability and chosen inclusions. Your advisor will confirm
+                  the final quotation.
+                </div>
               </div>
-            )}
+            </aside>
+</div>
+
           </div>
         </section>
 
-      
-<div className="mt-10">
-  {tourMapPoints.length > 0 ? (
-    <>
-      <TravelMap
-        title={
-          itineraryMapPoints.length > 0
-            ? "Tour itinerary map"
-            : "Destination map"
-        }
-        points={tourMapPoints}
-        showRoute={itineraryMapPoints.length > 1}
-        showStreetView
-        height={400}
-      />
-
-      {itineraryMapPoints.length === 0 && (
-        <p className="mt-2 text-sm text-gray-600">
-          This map shows the destination location. Individual itinerary
-          stops will appear when verified coordinates are available.
-        </p>
-      )}
-    </>
-  ) : (
-    <div className="rounded-xl border border-gray-200 p-5">
-      <h2 className="text-lg font-bold">Tour map</h2>
-      <p className="mt-2 text-sm text-gray-600">
-        Map coordinates are not yet available for this tour or its
-        destination. Please check the destination's coordinates in the
-        admin map-locations page.
-      </p>
-    </div>
-  )}
-</div>
-
 
         <section className="section">
-          <div className="container grid gap-12 lg:grid-cols-[1.2fr_.8fr]">
+          <div className="container">
             <div>
               <div className="eyebrow">The route</div>
               <h2 className="display mt-3 text-4xl font-extrabold">
@@ -436,94 +608,202 @@ const tourMapPoints =
                 />
               </div>
 
-              <div className="mt-12">
-                <div className="eyebrow">Day by day</div>
-                <div className="mt-6 space-y-3">
-                  {tour.itinerary.length ? (
-                    tour.itinerary.map((day: any) => (
-                      <div key={day.id} className="card overflow-hidden p-5">
-                        <div className="flex gap-5">
-                          <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff0e8] text-[12px] font-extrabold text-[#c94d1c]">
-                            {String(day.dayNumber).padStart(2, "0")}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <h3 className="font-['Manrope'] text-[16px] font-extrabold">
-                              {day.title}
-                            </h3>
-                            <p className="mt-2 text-[13px] leading-6 text-[#77736c]">
-                              {day.description}
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-3 text-[11px] text-[#908b83]">
-                              {day.meals && <span>Meals: {day.meals}</span>}
-                              {day.accommodation && (
-                                <span>Stay: {day.accommodation}</span>
-                              )}
-                              {day.stay && !day.accommodation && (
-                                <span>Stay: {day.stay}</span>
-                              )}
-                              {day.location && (
-                                <span>Location: {day.location}</span>
-                              )}
-                            </div>
-                            {Array.isArray(day.activities) &&
-                              day.activities.length > 0 && (
-                                <div className="mt-4 flex flex-wrap gap-2">
-                                  {day.activities.map((activity: string) => (
-                                    <span
-                                      key={activity}
-                                      className="rounded-full bg-[#fbfaf8] px-3 py-1 text-[10px] font-semibold text-[#6f6c66]"
-                                    >
-                                      {activity}
-                                    </span>
-                                  ))}
-                                </div>
-                              )}
-                          </div>
-                        </div>
-                        {day.image_url && (
-                          <img
-                            src={day.image_url}
-                            alt={`${day.title} itinerary`}
-                            loading="lazy"
-                            className="mt-5 aspect-[2.4] w-full rounded-xl object-cover"
-                          />
-                        )}
-                        {tour.itinerary.length
-  ? tour.itinerary.map((day: any) => (
-      <div key={day.id} className="card overflow-hidden p-5">
+              
 
-        {/* Existing day number, title, description,
-            meals, accommodation and activities */}
+<div className="mt-6 grid grid-cols-1 items-stretch gap-4 sm:grid-cols-2 xl:grid-cols-3">
+  {tour.itinerary?.length > 0 ? (
+    tour.itinerary.map((day: any) => {
+      const activities = Array.isArray(day.activities)
+        ? day.activities.filter(
+            (activity: unknown) =>
+              typeof activity === "string" && activity.trim().length > 0
+          )
+        : [];
 
-        {day.image_url && (
-          <img
-            src={day.image_url}
-            alt={`${day.title} itinerary`}
-            loading="lazy"
-            className="mt-5 aspect-[2.4] w-full rounded-xl object-cover"
-          />
-        )}
+      const spots = Array.isArray(day.spots)
+        ? day.spots.filter(
+            (spot: any) =>
+              spot &&
+              (spot.name?.trim() ||
+                spot.title?.trim() ||
+                spot.location?.trim())
+          )
+        : [];
 
-        {/* PASTE YOUR MAP LINKS AND SPOTS JSX HERE */}
+      const hasMapLinks =
+        Boolean(day.map_url?.trim()) ||
+        Boolean(day.street_view_url?.trim());
 
-      </div>
-    ))
-  : (
-      <div className="card p-6 text-sm text-[#77736c]">
-        The detailed itinerary will be confirmed by your travel advisor.
-      </div>
-    )
-}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="card p-6 text-sm text-[#77736c]">
-                      The detailed itinerary will be confirmed by your travel
-                      advisor.
-                    </div>
+      const hasDetails =
+        Boolean(day.meals?.trim()) ||
+        Boolean(day.accommodation?.trim()) ||
+        Boolean(day.stay?.trim()) ||
+        Boolean(day.location?.trim());
+
+      const hasExtraContent =
+        activities.length > 0 ||
+        spots.length > 0 ||
+        hasMapLinks ||
+        Boolean(day.image_url?.trim());
+
+      return (
+        <div
+          key={day.id}
+          className="card flex h-full min-w-0 flex-col overflow-hidden p-4 sm:p-5"
+        >
+          {/* Day heading and description */}
+          <div className="flex min-w-0 gap-3 sm:gap-4">
+            <div className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-[#fff0e8] text-xs font-extrabold text-[#c94d1c]">
+              {String(day.dayNumber).padStart(2, "0")}
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <h3 className="break-words font-['Manrope'] text-base font-extrabold">
+                {day.title}
+              </h3>
+
+              {day.description?.trim() && (
+                <p className="mt-2 break-words text-[13px] leading-6 text-[#77736c]">
+                  {day.description}
+                </p>
+              )}
+
+              {hasDetails && (
+                <div className="mt-3 flex flex-wrap gap-x-3 gap-y-2 text-[11px] text-[#908b83]">
+                  {day.meals?.trim() && (
+                    <span className="break-words">
+                      Meals: {day.meals}
+                    </span>
+                  )}
+
+                  {(day.accommodation?.trim() || day.stay?.trim()) && (
+                    <span className="break-words">
+                      Stay: {day.accommodation?.trim() || day.stay}
+                    </span>
+                  )}
+
+                  {day.location?.trim() && (
+                    <span className="break-words">
+                      Location: {day.location}
+                    </span>
                   )}
                 </div>
+              )}
+
+              {activities.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-2">
+                  {activities.map((activity: string, index: number) => (
+                    <span
+                      key={`${activity}-${index}`}
+                      className="max-w-full break-words rounded-full bg-[#fbfaf8] px-3 py-1 text-[10px] font-semibold text-[#6f6c66]"
+                    >
+                      {activity}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Day image */}
+          {day.image_url?.trim() && (
+            <img
+              src={day.image_url}
+              alt={`${day.title || "Day"} itinerary`}
+              loading="lazy"
+              className="mt-5 aspect-[16/9] w-full rounded-xl object-cover"
+            />
+          )}
+
+          {/* Places to visit */}
+          {spots.length > 0 && (
+            <div className="mt-5">
+              <h4 className="mb-3 text-sm font-bold text-[#292722]">
+                Places to visit
+              </h4>
+
+              <div className="space-y-3">
+                {spots.map((spot: any, index: number) => {
+                  const name =
+                    spot.name || spot.title || spot.location;
+
+                  return (
+                    <div
+                      key={spot.id ?? `${name}-${index}`}
+                      className="min-w-0 rounded-xl bg-[#fbfaf8] p-3"
+                    >
+                      <p className="break-words text-sm font-semibold text-[#292722]">
+                        {name}
+                      </p>
+
+                      {spot.description?.trim() && (
+                        <p className="mt-1 break-words text-xs leading-5 text-[#77736c]">
+                          {spot.description}
+                        </p>
+                      )}
+
+                      {spot.map_url?.trim() && (
+                        <a
+                          href={spot.map_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-block text-xs font-semibold text-[#c94d1c] hover:underline"
+                        >
+                          View on Google Maps ↗
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
+            </div>
+          )}
+
+          {/* Maps and Street View */}
+          {hasMapLinks && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {day.map_url?.trim() && (
+                <a
+                  href={day.map_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-[#e8e2d9] px-3 py-2 text-xs font-semibold text-[#c94d1c] transition-colors hover:bg-[#fff0e8]"
+                >
+                  View route ↗
+                </a>
+              )}
+
+              {day.street_view_url?.trim() && (
+                <a
+                  href={day.street_view_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full border border-[#e8e2d9] px-3 py-2 text-xs font-semibold text-[#c94d1c] transition-colors hover:bg-[#fff0e8]"
+                >
+                  Street View ↗
+                </a>
+              )}
+            </div>
+          )}
+
+          {/* Fallback */}
+          {!hasExtraContent && (
+            <p className="mt-4 text-xs leading-5 text-[#908b83]">
+              Contact your travel advisor for additional activity and
+              sightseeing details.
+            </p>
+          )}
+        </div>
+      );
+    })
+  ) : (
+    <div className="card col-span-full p-6 text-sm text-[#77736c]">
+      The detailed itinerary will be confirmed by your travel advisor.
+    </div>
+  )}
+</div>
+
+
 
               {(tour.importantInfo || tour.terms) && (
                 <div className="mt-12 grid gap-5 md:grid-cols-2">
@@ -595,43 +875,40 @@ const tourMapPoints =
               </div>
             </div>
 
-            <aside className="lg:pt-8">
-              <div className="card sticky top-28 p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <div className="eyebrow">Make it yours</div>
-                    <h3 className="mt-2 font-['Manrope'] text-2xl font-extrabold">
-                      Let’s shape the details.
-                    </h3>
-                  </div>
-                  <div className="grid h-11 w-11 place-items-center rounded-full bg-[#fff0e8] text-[#f26b35]">
-                    <ShieldCheck size={20} />
-                  </div>
-                </div>
-                <p className="mt-4 text-[13px] leading-6 text-[#6f6c66]">
-                  Availability, rooming, flights, transfers and the little
-                  details can all be adjusted with our travel desk.
-                </p>
-                <button
-                  onClick={() => setEnquiryOpen(true)}
-                  className="btn btn-primary mt-6 w-full"
-                >
-                  Request a callback <ArrowRight size={15} />
-                </button>
-                <button
-                  onClick={() => setEnquiryOpen(true)}
-                  className="btn btn-ghost mt-2 w-full"
-                >
-                  Booking request placeholder
-                </button>
-                <div className="mt-5 border-t border-[#eee9e1] pt-5 text-[12px] leading-6 text-[#77736c]">
-                  Prices are starting estimates and may change with dates,
-                  availability and chosen inclusions. Your advisor will confirm
-                  the final quotation.
-                </div>
-              </div>
-            </aside>
           </div>
+          <div className="mt-10">
+  {tourMapPoints.length > 0 ? (
+    <>
+      <TravelMap
+        title={
+          itineraryMapPoints.length > 0
+            ? "Tour itinerary map"
+            : "Destination map"
+        }
+        points={tourMapPoints}
+        showRoute={itineraryMapPoints.length > 1}
+        showStreetView
+        height={400}
+      />
+
+      {itineraryMapPoints.length === 0 && (
+        <p className="mt-2 text-sm text-gray-600">
+          This map shows the destination location. Individual itinerary
+          stops will appear when verified coordinates are available.
+        </p>
+      )}
+    </>
+  ) : (
+    <div className="rounded-xl border border-gray-200 p-5">
+      <h2 className="text-lg font-bold">Tour map</h2>
+      <p className="mt-2 text-sm text-gray-600">
+        Map coordinates are not yet available for this tour or its
+        destination. Please check the destination's coordinates in the
+        admin map-locations page.
+      </p>
+    </div>
+  )}
+</div>
         </section>
       </main>
       <Footer />
@@ -640,6 +917,17 @@ const tourMapPoints =
         onClose={() => setEnquiryOpen(false)}
         tour={{ id: tour.id, title: tour.title, destination: tour.destination }}
       />
+      <DirectBookingModal
+  open={directBookingOpen}
+  onClose={() => setDirectBookingOpen(false)}
+  tour={{
+    id: Number(tour.id),
+    title: tour.title,
+    destination: tour.destination,
+    priceFrom: tour.priceFrom,
+    departures: (tour.departures ?? []) as any,
+  }}
+/>
     </div>
   );
 }

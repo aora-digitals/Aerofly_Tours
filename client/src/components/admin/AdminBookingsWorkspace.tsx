@@ -264,51 +264,6 @@ export default function AdminBookingsWorkspace() {
     setHistory(data ?? []);
   }
 
-  async function cancelRecord(record: BookingRecord) {
-    const reasonText = reason.trim();
-
-    if (reasonText.length < 3) {
-      setError("Enter a cancellation reason of at least 3 characters.");
-      return;
-    }
-
-    if (
-      !window.confirm(
-        `Cancel ${record.reference}? This action will update the record status.`,
-      )
-    ) {
-      return;
-    }
-
-    setBusy(true);
-    setError("");
-    setNotice("");
-
-    try {
-      const { error: rpcError } = await db.rpc(
-        "admin_cancel_booking_record",
-        {
-          p_record_type: record.recordType,
-          p_record_id: record.id,
-          p_reason: reasonText,
-        },
-      );
-
-      if (rpcError) throw rpcError;
-
-      setReason("");
-      setSelected(null);
-      setNotice(`${record.reference} was cancelled.`);
-      await loadRecords();
-    } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Unable to cancel this record.",
-      );
-    } finally {
-      setBusy(false);
-    }
-  }
-
   async function archiveRecord(record: BookingRecord) {
     if (
       !window.confirm(

@@ -96,6 +96,14 @@ import {
   getEnquiryOfferSummary,
 } from "./bookingOffers";
 
+import {
+  createDirectBooking,
+  applyCustomerCoupon,
+  listAdminCoupons,
+  saveAdminCoupon,
+  setAdminCouponActive,
+} from "./directBooking";
+
 const permissionProcedure = (permission: WorkspacePermission) =>
   protectedProcedure.use(async ({ ctx, next }) => {
     if (!ctx.supabaseAccessToken) {
@@ -441,6 +449,65 @@ export const appRouter = router({
 
         return respondToBookingOffer(ctx.supabaseAccessToken, input);
       }),
+
+    
+directBook: protectedProcedure
+  .input(
+    z.object({
+      tourId: z.number().int().positive(),
+      departureId: z.number().int().positive().optional(),
+      name: z.string().trim().min(2).max(160),
+      email: z.string().email().max(320),
+      phone: z.string().trim().min(7).max(40),
+      adults: z.number().int().min(1).max(30),
+      children: z.number().int().min(0).max(29),
+      infants: z.number().int().min(0).max(29),
+      travellerNames: z.array(
+        z.string().trim().min(1).max(160),
+      ).max(30),
+      notes: z.string().max(2000).optional(),
+    }).refine(
+      (value) =>
+        value.adults + value.children + value.infants <= 30,
+      { message: "Maximum 30 travellers per booking." },
+    ),
+  )
+  .mutation(({ ctx, input }) => {
+    if (!ctx.supabaseAccessToken) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "A Supabase session is required.",
+      });
+    }
+
+    return createDirectBooking(
+      ctx.supabaseAccessToken,
+      input,
+    );
+  }),
+
+applyCoupon: protectedProcedure
+  .input(
+    z.object({
+      quotationId: z.number().int().positive(),
+      code: z.string().trim().min(2).max(40),
+    }),
+  )
+  .mutation(({ ctx, input }) => {
+    if (!ctx.supabaseAccessToken) {
+      throw new TRPCError({
+        code: "UNAUTHORIZED",
+        message: "A Supabase session is required.",
+      });
+    }
+
+    return applyCustomerCoupon(
+      ctx.supabaseAccessToken,
+      input.quotationId,
+      input.code,
+    );
+  }),
+
   }),
 
   crm: router({
@@ -1112,6 +1179,92 @@ enquiryOffers: permissionProcedure("crm")
           return deleteDestinationRecord(input.id);
         }),
     }),
+
+    
+coupons: router({
+  list: permissionProcedure("marketing").query(
+    async ({ ctx }) => {
+      if (
+        !(await hasDatabasePermission(
+          ctx.supabaseAccessToken,
+          ["marketing.manage"],
+        ))
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Coupon management requires marketing.manage.",
+        });
+      }
+
+      return listAdminCoupons(ctx.supabaseAccessToken!);
+    },
+  ),
+
+  save: permissionProcedure("marketing")
+    .input(
+      z.object({
+        id: z.number().int().positive().optional(),
+        code: z.string().trim().min(3).max(40),
+        description: z.string().max(500).optional(),
+        discountType: z.enum(["percent", "fixed"]),
+        discountValue: z.number().positive(),
+        maxDiscount: z.number().nonnegative().optional(),
+        minSubtotal: z.number().nonnegative(),
+        startsAt: z.string().datetime(),
+        expiresAt: z.string().datetime().optional(),
+        usageLimit: z.number().int().positive().optional(),
+        perCustomerLimit: z.number().int().positive().max(100),
+        isActive: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        !(await hasDatabasePermission(
+          ctx.supabaseAccessToken,
+          ["marketing.manage"],
+        ))
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Coupon management permission required.",
+        });
+      }
+
+      return saveAdminCoupon(
+        ctx.supabaseAccessToken!,
+        input,
+      );
+    }),
+
+  setActive: permissionProcedure("marketing")
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        isActive: z.boolean(),
+      }),
+    )
+    .mutation(async ({ ctx, input }) => {
+      if (
+        !(await hasDatabasePermission(
+          ctx.supabaseAccessToken,
+          ["marketing.manage"],
+        ))
+      ) {
+        throw new TRPCError({
+          code: "FORBIDDEN",
+          message: "Coupon management permission required.",
+        });
+      }
+
+      return setAdminCouponActive(
+        ctx.supabaseAccessToken!,
+        input.id,
+        input.isActive,
+      );
+    }),
+}),
+
+
     team: router({
       list: permissionProcedure("team").query(async ({ ctx }) => {
         if (

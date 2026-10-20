@@ -1,0 +1,76 @@
+
+services:
+  - type: web
+    name: aerofly-tours
+    runtime: node
+    plan: starter
+    region: singapore
+
+    buildCommand: corepack enable && corepack prepare pnpm@10.4.1 --activate && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /healthz
+
+    # Require explicit promotion after staging validation.
+    autoDeploy: false
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: 22.16.0
+
+      # Public browser configuration; these values are embedded at build time.
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
+
+      # Server-side configuration
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+
+      # Payments
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+
+      # Existing integrations
+      - key: VITE_APP_ID
+        sync: false
+      - key: VITE_OAUTH_PORTAL_URL
+        sync: false
+      - key: VITE_ANALYTICS_ENDPOINT
+        sync: false
+      - key: VITE_ANALYTICS_WEBSITE_ID
+        sync: false
+      - key: OAUTH_SERVER_URL
+        sync: false
+      - key: OWNER_OPEN_ID
+        sync: false
+
+      # Currency integration
+      - key: CURRENCY_RATE_PROVIDER_URL
+        sync: false
+      - key: CURRENCY_RATE_PROVIDER_API_KEY
+        sync: false
+      - key: CURRENCY_RATE_PROVIDER_NAME
+        sync: false
+
+      - key: BUILT_IN_FORGE_API_URL
+        sync: false
+      - key: BUILT_IN_FORGE_API_KEY
+        sync: false
+
+      # Set only after auditing all external domains used by the UI.
+      - key: CONTENT_SECURITY_POLICY
+        sync: false
+
+      - key: JSON_BODY_LIMIT
+        value: 5mb

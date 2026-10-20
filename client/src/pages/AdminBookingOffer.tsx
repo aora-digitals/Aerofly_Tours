@@ -1,5 +1,5 @@
 
-import { useMemo, useState, useEffect, type FormEvent } from "react";
+import { useMemo, useState, useEffect} from "react";
 import { Link, useLocation } from "wouter";
 import { ArrowLeft } from "lucide-react";
 import { toast } from "sonner";
@@ -43,13 +43,6 @@ type FieldOptions = {
   step?: string | number;
 };
 
-const todayLocal = () => {
-  const date = new Date();
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-};
 
 const datePlusDays = (days: number) => {
   const date = new Date();
@@ -146,14 +139,6 @@ travelDates: "",
         (tour) => Number(tour.id) === selectedTourId,
       ),
     [toursQuery.data?.items, selectedTourId],
-  );
-
-  const selectedDeparture = useMemo(
-    () =>
-      departures.data?.find(
-        (departure) => String(departure.id) === form.departureId,
-      ),
-    [departures.data, form.departureId],
   );
 
   const enquiryIdNumber = Number(form.enquiryId);

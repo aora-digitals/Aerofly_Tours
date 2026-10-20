@@ -23,7 +23,7 @@ import DemoTripExplorer from "@/components/site/DemoTripExplorer";
 import Reveal from "@/components/site/Reveal";
 import { trpc } from "@/lib/trpc";
 import { usePageMeta } from "../hooks/usePageMeta";
-import PersonalizedTourRecommendations from "@/components/site/PersonalizedTourRecommendations";
+// import PersonalizedTourRecommendations from "@/components/site/PersonalizedTourRecommendations";
 // import { useLanguage } from "@/contexts/LanguageContext";
 // import AIExplorer from "@/components/site/AIExplorer";
  
@@ -60,12 +60,12 @@ usePageMeta({
     staleTime: 60_000,
   });
 
-  const recommendationTours = [
-  ...(data?.featuredTours ?? []),
-  ...(data?.trendingTours ?? []),
-  ...(data?.domesticTours ?? []),
-  ...(data?.internationalTours ?? []),
-];
+//   const recommendationTours = [
+//   ...(data?.featuredTours ?? []),
+//   ...(data?.trendingTours ?? []),
+//   ...(data?.domesticTours ?? []),
+//   ...(data?.internationalTours ?? []),
+// ];
 
   const [enquiryOpen, setEnquiryOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -126,14 +126,14 @@ usePageMeta({
           <section className="section"><div className="container"><div className="card p-10 text-center"><h2 className="font-['Manrope'] text-2xl font-extrabold">The catalogue is taking a moment.</h2><p className="mt-2 text-sm text-[#77736c]">Please refresh or use the travel desk while we reconnect the public catalogue.</p></div></div></section>
         ) : (
           <>
-          {recommendationTours.length > 0 && (
+          {/* {recommendationTours.length > 0 && (
   <PersonalizedTourRecommendations
   tours={recommendationTours}
   title="Recommended for your next journey"
   source="home"
   limit={3}
 />
-)}
+)} */}
             <TourSection title="Featured journeys" eyebrow="A considered collection" tours={data?.featuredTours ?? []} loading={isLoading} />
             <TourSection title="Trending right now" eyebrow="What travellers are exploring" tours={data?.trendingTours ?? []} loading={isLoading} muted />
            

@@ -51,10 +51,23 @@ function requireEnv(name: string): string {
   return value;
 }
 
-async function providerFetch(url: string, init: RequestInit): Promise<any> {
-  const response = await fetch(url, init);
+async function providerFetch(
+  url: string,
+  init: RequestInit,
+): Promise<any> {
+  const response = await fetch(url, {
+    ...init,
+    signal: init.signal ?? AbortSignal.timeout(10_000),
+  });
+
   const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(`Payment provider request failed (${response.status})`);
+
+  if (!response.ok) {
+    throw new Error(
+      `Payment provider request failed (${response.status})`,
+    );
+  }
+
   return body;
 }
 

@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   UserRoundCog,
   UsersRound,
+  BadgePercent
 } from "lucide-react";
 import { Link } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -24,6 +25,7 @@ import AdminFinanceWorkspace from "@/components/admin/AdminFinanceWorkspace";
 import AdminSupportWorkspace from "@/components/admin/AdminSupportWorkspace";
 import TourCatalogueWorkspace from "@/components/admin/TourCatalogueWorkspace";
 import AdminBookingsWorkspace from "@/components/admin/AdminBookingsWorkspace";
+import AdminCouponWorkspace from "@/components/admin/AdminCouponWorkspace";
 
 import { trpc } from "@/lib/trpc";
 import {
@@ -45,6 +47,7 @@ const baseNav: Array<
   ["Leads & enquiries", "enquiries", FileText, "enquiries"],
   ["Customer care", "support", MessageCircle, "enquiries"],
   ["Sales & quotations", "sales", FileText, "quotes"],
+  ["Coupon management", "coupons", BadgePercent, "marketing"],
   ["Customers", "customers", UsersRound, "customers"],
   ["CRM & customer ops", "crm", UsersRound, "crm"],
   ["Bookings", "bookings", BriefcaseBusiness, "bookings"],
@@ -122,9 +125,16 @@ const [active, setActive] = useState(() => {
 }, [active]);
 
 const visibleNav = useMemo(
-    () => baseNav.filter(([, , , permission]) => can(permission)),
-    [user?.role],
-  );
+  () =>
+    baseNav.filter(
+      ([, id, , permission]) =>
+        can(permission) &&
+        (id !== "coupons" ||
+          role === "owner" ||
+          role === "admin"),
+    ),
+  [user?.role],
+);
 
   if (loading || (allowed && isLoading))
     return (
@@ -474,6 +484,12 @@ const visibleNav = useMemo(
           {active === "catalogue" && can("catalogue") && (
   <TourCatalogueWorkspace />
 )}
+
+{active === "coupons" &&
+  can("marketing") &&
+  (role === "owner" || role === "admin") && (
+    <AdminCouponWorkspace />
+  )}
 
 
         {active === "bookings" && can("bookings") && (

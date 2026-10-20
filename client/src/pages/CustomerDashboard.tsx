@@ -198,7 +198,7 @@ export default function CustomerDashboard() {
             <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h2 className="text-lg font-extrabold">Booking offers</h2>
+                  <h2 className="text-lg font-extrabold">Awaiting Booking offers</h2>
                   <p className="mt-1 text-sm text-[#6f6c66]">
                     Review proposals from your AeroFly travel consultant.
                   </p>
@@ -331,24 +331,6 @@ export default function CustomerDashboard() {
               </Link>
             </section>
 
-            <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5">
-              <div className="eyebrow">Quick actions</div>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <Link href="/tours" className="btn btn-ghost">
-                  Explore tours <ArrowRight size={14} />
-                </Link>
-                <Link href="/dashboard/profile" className="btn btn-ghost">
-                  Update profile
-                </Link>
-                <Link href="/dashboard/wishlist" className="btn btn-ghost">
-                  View wishlist
-                </Link>
-                <Link href="/contact" className="btn btn-ghost">
-                  Contact AeroFly
-                </Link>
-              </div>
-            </section>
-
             <div className="grid gap-6 xl:grid-cols-[1.25fr_.75fr]">
               <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6 sm:p-7">
                 <SectionHeading
@@ -410,6 +392,24 @@ export default function CustomerDashboard() {
                 </Link>
               </section>
             </div>
+
+             <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-5">
+              <div className="eyebrow">Quick actions</div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                <Link href="/tours" className="btn btn-ghost">
+                  Explore tours <ArrowRight size={14} />
+                </Link>
+                <Link href="/dashboard/profile" className="btn btn-ghost">
+                  Update profile
+                </Link>
+                <Link href="/dashboard/wishlist" className="btn btn-ghost">
+                  View wishlist
+                </Link>
+                <Link href="/contact" className="btn btn-ghost">
+                  Contact AeroFly
+                </Link>
+              </div>
+            </section>
 
             <div className="grid gap-6 lg:grid-cols-2">
               <section className="rounded-2xl border border-[#e8e4dd] bg-[#fffdf9] p-6">

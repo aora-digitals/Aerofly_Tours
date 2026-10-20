@@ -40,6 +40,27 @@ type RazorpaySuccessResponse = {
   razorpay_signature: string;
 };
 
+type RazorpayCheckoutConfig = {
+  display?: {
+    block?: Record<
+      string,
+      {
+        name: string;
+        instruments: Array<{
+          method: "upi" | "card" | "netbanking" | "wallet";
+        }>;
+      }
+    >;
+    sequence?: string[];
+    preferences?: {
+      show_default_blocks?: boolean;
+    };
+  };
+};
+
+
+
+
 type RazorpayOptions = {
   key: string;
   amount: number;
@@ -47,6 +68,7 @@ type RazorpayOptions = {
   name: string;
   description: string;
   order_id: string;
+  config?: RazorpayCheckoutConfig;
   handler: (response: RazorpaySuccessResponse) => void;
   modal?: {
     ondismiss?: () => void;
@@ -102,20 +124,32 @@ export default function CustomerOffers() {
   const [editingOffer, setEditingOffer] = useState<number | null>(null);
   const [checkoutKeys, setCheckoutKeys] = useState<Record<number, string>>({});
 
+const [couponByOffer, setCouponByOffer] = useState<
+  Record<number, string>
+>({});
 
-  const startCheckout = (quotationId: number) => {
-  const idempotencyKey =
-    checkoutKeys[quotationId] ?? window.crypto.randomUUID();
+const applyCoupon = trpc.customer.applyCoupon.useMutation({
+  onSuccess: async (result, variables) => {
+    await utils.customer.offers.invalidate();
 
-  if (!checkoutKeys[quotationId]) {
-    setCheckoutKeys((current) => ({
+    toast.success(
+      `Coupon ${result.code} applied. You saved ${
+        money(result.discount, result.currency)
+      }.`,
+    );
+
+    setCouponByOffer((current) => ({
       ...current,
-      [quotationId]: idempotencyKey,
+      [variables.quotationId]: "",
     }));
-  }
+  },
 
-  checkout.mutate({ quotationId, idempotencyKey });
-};
+  onError: (error) => {
+    toast.error(
+      error.message || "This coupon could not be applied.",
+    );
+  },
+});
 
   const respond = trpc.customer.respondToOffer.useMutation({
     onSuccess: async (result) => {
@@ -167,20 +201,27 @@ const checkout = useMutation({
       "payment-create",
       {
         body: { quotationId, idempotencyKey },
-        headers: { "Idempotency-Key": idempotencyKey },
+        headers: {
+          "Idempotency-Key": idempotencyKey,
+        },
       },
     );
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      throw new Error(error.message);
+    }
 
     if (!data || data.error) {
-      throw new Error(data?.error || "Unable to initialize payment.");
+      throw new Error(
+        data?.error || "Unable to initialize payment.",
+      );
     }
 
     return data as PaymentCreateResult;
   },
 
   onSuccess: async (result) => {
+    // Stripe checkout
     if (result.provider === "stripe") {
       if (!result.checkoutUrl) {
         toast.error("Stripe did not return a checkout URL.");
@@ -191,6 +232,7 @@ const checkout = useMutation({
       return;
     }
 
+    // Razorpay checkout
     if (result.provider === "razorpay") {
       if (!result.clientKey || !result.providerOrderId) {
         toast.error("Razorpay order details are incomplete.");
@@ -204,20 +246,42 @@ const checkout = useMutation({
           throw new Error("Razorpay Checkout is unavailable.");
         }
 
-        const razorpay = new window.Razorpay({
+        const options: RazorpayOptions = {
           key: result.clientKey,
           amount: result.amountMinor,
           currency: result.currency,
-          name: "AeroFly Tours",
+          name: "AeroFlyy Tours",
           description: "Booking payment",
           order_id: result.providerOrderId,
 
-          handler: (_response) => {
-            // Do not mark the payment successful in the browser.
-            // The verified Razorpay webhook controls payment status.
+        
+config: {
+  display: {
+    block: {
+      all_methods: {
+        name: "All Payment Options",
+        instruments: [
+          { method: "upi" },
+          { method: "card" },
+          { method: "netbanking" },
+          { method: "wallet" },
+        ],
+      },
+    },
+    sequence: ["block.all_methods"],
+    preferences: {
+      show_default_blocks: true,
+    },
+  },
+},
+
+
+          handler: (_response: RazorpaySuccessResponse) => {
+            // The verified webhook remains the source of truth.
             toast.success(
               "Payment submitted. Your payment status will update after verification.",
             );
+            console.log(_response)
           },
 
           modal: {
@@ -227,11 +291,14 @@ const checkout = useMutation({
               );
             },
           },
-        });
+        };
+
+        const razorpay = new window.Razorpay(options);
 
         razorpay.on("payment.failed", (response) => {
           toast.error(
-            response.error?.description || "The payment was not completed.",
+            response.error?.description ||
+              "The payment was not completed.",
           );
         });
 
@@ -251,7 +318,9 @@ const checkout = useMutation({
   },
 
   onError: (error) => {
-    toast.error(error.message || "Unable to start payment.");
+    toast.error(
+      error.message || "Unable to start payment.",
+    );
   },
 });
 
@@ -329,13 +398,14 @@ const checkout = useMutation({
               Your travel consultant
             </p>
             <h1 className="mt-2 text-3xl font-extrabold tracking-tight sm:text-4xl">
-              Booking offers
+              My Booking & Offers
             </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600">
-              AeroFly staff prepare your trip offer after discussing your
-              requirements. Review the details here, request changes, accept, or
-              reject it. Payment is available after acceptance.
-            </p>
+           <p className="mt-3 max-w-2xl text-sm leading-6 text-neutral-600">
+  Track direct bookings and proposals from your AeroFlyy travel
+  consultant in one place. Review trip details, apply eligible
+  coupons to direct bookings, and continue to secure payment
+  when available.
+</p>
           </div>
           <Link
             href="/dashboard/enquiries"
@@ -393,14 +463,29 @@ const checkout = useMutation({
               offer.customer_response ?? "awaiting_response",
             );
             const details = (offer.booking_details ?? {}) as {
-              tourTitle?: string;
-              cancellationTerms?: string;
-              paymentTerms?: string;
-              departureCity?: string;
-              departureDate?: string;
-              returnDate?: string;
-              travellerNames?: string[];
-            };
+  tourTitle?: string;
+  cancellationTerms?: string;
+  paymentTerms?: string;
+  departureCity?: string;
+  departureDate?: string;
+  returnDate?: string;
+  travellerNames?: string[];
+  bookingType?: string;
+  bookingReference?: string;
+  couponCode?: string;
+  couponDiscount?: number;
+  couponAdjustedTotal?: number; // ADD THIS
+};
+
+const displayedTotal = Number(
+  details.couponCode && details.couponAdjustedTotal != null
+    ? details.couponAdjustedTotal
+    : offer.total,
+);
+
+const displayedDiscount = Number(offer.discount ?? 0);
+const couponDiscount = Number(details.couponDiscount ?? 0);
+
             const canRespond =
               ["awaiting_response", "changes_requested"].includes(status) &&
               ["sent", "viewed"].includes(String(offer.status));
@@ -472,12 +557,12 @@ const checkout = useMutation({
                       Total offer
                     </p>
                     <p className="mt-1 text-2xl font-extrabold">
-                      {money(offer.total, offer.currency)}
+                      {money(displayedTotal, offer.currency)}
                     </p>
                     <p className="mt-1 text-xs text-neutral-500">
-                      Taxes {money(offer.taxes, offer.currency)} · Discount{" "}
-                      {money(offer.discount, offer.currency)}
-                    </p>
+  Taxes {money(offer.taxes, offer.currency)} · Discount{" "}
+  {money(displayedDiscount + couponDiscount, offer.currency)}
+</p>
                   </div>
                 </div>
 
@@ -512,10 +597,10 @@ const checkout = useMutation({
                         <tfoot>
                           <tr className="border-t border-neutral-200">
                             <td className="px-3 py-3 font-semibold" colSpan={2}>
-                              Total
+                              Total Payable
                             </td>
                             <td className="px-3 py-3 text-right font-semibold">
-                              {money(offer.total, offer.currency)}
+                              {money(displayedTotal, offer.currency)}
                             </td>
                           </tr>
                         </tfoot>
@@ -660,12 +745,94 @@ const checkout = useMutation({
                             <strong>{`BK-${offer["bookingId"]}`}</strong>
                           </p>
                         )}
-                       <button
-  disabled={checkout.isPending}
-  onClick={() => startCheckout(offer.id)}
-  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:opacity-50"
+
+                        
+{details.bookingType === "direct" && (
+  <div className="mt-4 rounded-xl border border-orange-200 bg-orange-50/60 p-4">
+    <h3 className="text-sm font-bold text-neutral-900">
+      Have a coupon code?
+    </h3>
+
+    <p className="mt-1 text-xs leading-5 text-neutral-600">
+      Apply an AeroFly promotion before checkout.
+      The server validates the code and updates your payable total.
+    </p>
+
+    {details.couponCode && (
+      <p className="mt-2 text-xs font-semibold text-emerald-800">
+        Applied: {details.couponCode}
+        {" · "}
+        You saved{" "}
+        {money(
+          Number(details.couponDiscount ?? offer.discount),
+          offer.currency,
+        )}
+      </p>
+    )}
+
+    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+      <input
+        aria-label="Coupon code"
+        value={couponByOffer[offer.id] ?? ""}
+        onChange={(event) =>
+          setCouponByOffer((current) => ({
+            ...current,
+            [offer.id]: event.target.value.toUpperCase(),
+          }))
+        }
+        placeholder="Enter coupon code"
+        maxLength={40}
+        className="min-w-0 flex-1 rounded-full border border-neutral-300 bg-white px-4 py-2.5 text-sm uppercase outline-none focus:border-orange-600"
+      />
+
+      <button
+        type="button"
+        disabled={
+          applyCoupon.isPending ||
+          !(couponByOffer[offer.id] ?? "").trim()
+        }
+        onClick={() =>
+          applyCoupon.mutate({
+            quotationId: offer.id,
+            code: (couponByOffer[offer.id] ?? "").trim(),
+          })
+        }
+        className="rounded-full border border-orange-700 px-5 py-2.5 text-sm font-bold text-orange-800 disabled:opacity-50"
+      >
+        {applyCoupon.isPending
+          ? "Checking…"
+          : "Apply coupon"}
+      </button>
+    </div>
+  </div>
+)}
+
+                     <button
+  type="button"
+  disabled={checkout.isPending || applyCoupon.isPending}
+  onClick={() => {
+    const quotationId = Number(offer.id);
+
+    let idempotencyKey = checkoutKeys[quotationId];
+
+    if (!idempotencyKey) {
+      idempotencyKey = crypto.randomUUID();
+
+      setCheckoutKeys((current) => ({
+        ...current,
+        [quotationId]: idempotencyKey,
+      }));
+    }
+
+    checkout.mutate({
+      quotationId,
+      idempotencyKey,
+    });
+  }}
+  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-full bg-orange-700 px-4 py-2.5 text-sm font-bold text-white hover:bg-orange-800 disabled:cursor-not-allowed disabled:opacity-50"
 >
-  <CreditCard size={16} />{" "}
+  <CreditCard size={16} />
+
   {checkout.isPending
     ? "Opening secure checkout…"
     : "Continue to payment"}
@@ -697,7 +864,7 @@ const checkout = useMutation({
                       <p className="mt-4 flex gap-2 text-xs leading-5 text-neutral-500">
                         <AlertCircle size={15} className="mt-0.5 shrink-0" />{" "}
                         Cancellation does not automatically issue a refund. Any
-                        paid amount is reviewed by AeroFly staff.
+                        paid amount is reviewed by AeroFlyy staff.
                       </p>
                     )}
                   </div>

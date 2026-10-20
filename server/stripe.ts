@@ -91,13 +91,13 @@ export async function createCustomerCheckout(input: {
     mode: "payment",
     customer_email: input.user.email ?? undefined,
     client_reference_id: String(input.user.id),
-    allow_promotion_codes: true,
+    allow_promotion_codes: false,
     line_items: [
       {
         price_data: {
           currency: checkoutCurrency.toLowerCase(),
           product_data: {
-            name: `AeroFly trip to ${quote.destination}`,
+            name: `AeroFlyy trip to ${quote.destination}`,
             description: `${quote.travelDates} · ${quote.travellers} traveller${quote.travellers === 1 ? "" : "s"}`,
           },
           unit_amount: amount,

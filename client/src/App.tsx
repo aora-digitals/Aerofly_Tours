@@ -1,7 +1,7 @@
 
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { lazy, Suspense, useEffect } from "react";
+import { lazy,useEffect } from "react";
 import { Route, Switch } from "wouter";
 
 import ErrorBoundary from "./components/ErrorBoundary";

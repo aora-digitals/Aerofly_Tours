@@ -12,6 +12,8 @@ const configuredOrigins = [
   Deno.env.get("PAYMENT_RETURN_ORIGIN"),
   "http://localhost:3000",
   "http://127.0.0.1:3000",
+  "https://aerofly.com",
+  "https://www.aerofly.com",
   "https://aeroflyytours.com",
   "https://www.aeroflyytours.com",
 ].filter((value): value is string => Boolean(value));
@@ -275,15 +277,47 @@ Deno.serve(async (req: Request) => {
         });
       }
     }
+    // ---------------------------------------------------------
+    // 5. Validate the discounted booking amount and currency
+    // ---------------------------------------------------------
+    const bookingId = Number(quote["bookingId"]);
 
-    // ---------------------------------------------------------
-    // 5. Validate amount and currency
-    // ---------------------------------------------------------
-    const amount = Number(quote.total);
+    if (!Number.isSafeInteger(bookingId) || bookingId <= 0) {
+      return json(req, 409, {
+        error: "This proposal is not linked to a valid booking",
+      });
+    }
+
+    // Use the final booking amount, including any applied discount.
+    const { data: booking, error: bookingError } = await admin
+      .from("bookings")
+      .select("id, amount")
+      .eq("id", bookingId)
+      .maybeSingle();
+
+    if (bookingError) {
+      console.error("Booking amount lookup failed", {
+        quotationId,
+        bookingId,
+        code: bookingError.code,
+      });
+
+      return json(req, 503, {
+        error: "Could not verify the final booking amount",
+      });
+    }
+
+    if (!booking) {
+      return json(req, 409, {
+        error: "The booking linked to this proposal could not be found",
+      });
+    }
+
+    const amount = Number(booking.amount);
 
     if (!Number.isFinite(amount) || amount <= 0) {
       return json(req, 409, {
-        error: "Invalid proposal total",
+        error: "Invalid discounted booking amount",
       });
     }
 
@@ -295,14 +329,8 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    /*
-     * This function creates a full-balance payment attempt.
-     * INR is routed to Razorpay; other currencies to Stripe.
-     *
-     * Stripe supports currencies with different minor-unit
-     * precision. Extend this mapping if your catalogue uses
-     * three-decimal currencies.
-     */
+    // INR and most common checkout currencies use 2 decimal places.
+    // Keep the existing zero-decimal currency handling.
     const zeroDecimalCurrencies = new Set([
       "BIF", "CLP", "DJF", "GNF", "ISK", "JPY",
       "KMF", "KRW", "PYG", "RWF", "UGX", "VND",
@@ -315,14 +343,19 @@ Deno.serve(async (req: Request) => {
 
     const amountMinor = Math.round(amount * minorUnitFactor);
 
-    if (
-      !Number.isSafeInteger(amountMinor) ||
-      amountMinor <= 0
-    ) {
+    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
       return json(req, 409, {
         error: "Invalid payment amount",
       });
     }
+
+    console.log("[payment-create] Verified booking amount", {
+      quotationId,
+      bookingId,
+      currency,
+      amountMinor,
+    });
+
 
     // ---------------------------------------------------------
     // 6. Select the gateway
